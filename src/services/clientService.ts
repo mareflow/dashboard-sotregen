@@ -195,14 +195,76 @@ export async function fetchProfiles(): Promise<any[]> {
   return data || [];
 }
 
-export async function updateUserRole(userId: string, newRole: 'admin' | 'coordenador' | 'gestor'): Promise<void> {
-  const { error } = await supabase
-    .from('profiles')
-    .update({ role: newRole, updated_at: new Date().toISOString() })
-    .eq('id', userId);
+export async function adminCreateUser(
+  email: string,
+  password: string,
+  role: 'admin' | 'coordenador' | 'gestor',
+  fullName?: string
+): Promise<any> {
+  const { data, error } = await supabase.functions.invoke('manage-team', {
+    body: {
+      action: 'create_user',
+      email,
+      password,
+      role,
+      fullName,
+    },
+  });
 
   if (error) {
-    throw new Error(`Erro ao atualizar cargo do usuário: ${error.message}`);
+    throw new Error(error.message || 'Erro ao criar usuário');
+  }
+
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data;
+}
+
+export async function adminDeleteUser(userId: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('manage-team', {
+    body: {
+      action: 'delete_user',
+      userId,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao excluir usuário');
+  }
+
+  if (data?.error) {
+    throw new Error(data.error);
   }
 }
+
+export async function adminUpdateUser(
+  userId: string,
+  newRole?: 'admin' | 'coordenador' | 'gestor',
+  newPassword?: string
+): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('manage-team', {
+    body: {
+      action: 'update_user',
+      userId,
+      role: newRole,
+      password: newPassword,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao atualizar dados do usuário');
+  }
+
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+}
+
+export async function updateUserRole(userId: string, newRole: 'admin' | 'coordenador' | 'gestor'): Promise<void> {
+  return adminUpdateUser(userId, newRole);
+}
+
+
 

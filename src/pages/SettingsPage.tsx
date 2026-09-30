@@ -21,9 +21,12 @@ import {
   deleteAdAccount,
   fetchProfiles,
   updateUserRole,
+  adminCreateUser,
+  adminDeleteUser,
+  adminUpdateUser,
 } from '../services/clientService';
 import { MetricsConfigModal } from '../components/MetricsConfigModal';
-import { Users as TeamIcon, UserCheck } from 'lucide-react';
+import { Users as TeamIcon, UserCheck, KeyRound, UserPlus, X } from 'lucide-react';
 
 interface SettingsPageProps {
   userRole?: 'admin' | 'coordenador' | 'gestor';
@@ -50,6 +53,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountId, setNewAccountId] = useState('');
   const [submittingAccount, setSubmittingAccount] = useState(false);
+
+  // Form New User (Admin only)
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserFullName, setNewUserFullName] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'coordenador' | 'gestor'>('gestor');
+  const [submittingUser, setSubmittingUser] = useState(false);
+
+  // Password reset modal/state
+  const [editingPasswordUser, setEditingPasswordUser] = useState<{ id: string; email: string } | null>(null);
+  const [editPasswordValue, setEditPasswordValue] = useState('');
+  const [submittingPassword, setSubmittingPassword] = useState(false);
 
   // Modal State
   const [modalClient, setModalClient] = useState<Client | null>(null);
@@ -104,6 +119,58 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setMessage({ type: 'error', text: err.message || 'Erro ao alterar nível de acesso.' });
     } finally {
       setUpdatingRoleId(null);
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserEmail.trim() || !newUserPassword.trim()) return;
+    setSubmittingUser(true);
+    setMessage(null);
+    try {
+      await adminCreateUser(newUserEmail, newUserPassword, newUserRole, newUserFullName);
+      setNewUserEmail('');
+      setNewUserPassword('');
+      setNewUserFullName('');
+      setNewUserRole('gestor');
+      setMessage({ type: 'success', text: `Novo usuário cadastrado com sucesso com o cargo de ${newUserRole}!` });
+      const updatedProfiles = await fetchProfiles();
+      setProfiles(updatedProfiles);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Erro ao cadastrar novo usuário.' });
+    } finally {
+      setSubmittingUser(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, email: string) => {
+    if (!window.confirm(`Tem certeza que deseja excluir o usuário "${email}"? Esta ação removerá o acesso definitivamente.`)) {
+      return;
+    }
+    setMessage(null);
+    try {
+      await adminDeleteUser(userId);
+      setProfiles((prev) => prev.filter((p) => p.id !== userId));
+      setMessage({ type: 'success', text: `Usuário "${email}" excluído com sucesso!` });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Erro ao excluir usuário.' });
+    }
+  };
+
+  const handleSavePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPasswordUser || !editPasswordValue || editPasswordValue.length < 6) return;
+    setSubmittingPassword(true);
+    setMessage(null);
+    try {
+      await adminUpdateUser(editingPasswordUser.id, undefined, editPasswordValue);
+      setMessage({ type: 'success', text: `Senha de "${editingPasswordUser.email}" alterada com sucesso!` });
+      setEditingPasswordUser(null);
+      setEditPasswordValue('');
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Erro ao redefinir senha do usuário.' });
+    } finally {
+      setSubmittingPassword(false);
     }
   };
 
@@ -592,6 +659,99 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </div>
           </div>
 
+          {/* Form to Add New User */}
+          <form
+            onSubmit={handleCreateUser}
+            style={{
+              background: 'rgba(7, 18, 38, 0.6)',
+              borderRadius: '10px',
+              padding: '16px 20px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              marginBottom: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <UserPlus size={16} color="#00E5FF" />
+              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#FFFFFF' }}>
+                Cadastrar Novo Membro da Equipe
+              </span>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+            }}>
+              <div>
+                <label className="form-label">E-mail de Acesso *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="gestor@mareflow.com"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  className="form-input"
+                  style={{ fontSize: '0.8125rem' }}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Senha Inicial * (mínimo 6)</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="Senha de acesso..."
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  className="form-input"
+                  style={{ fontSize: '0.8125rem' }}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Nome do Colaborador</label>
+                <input
+                  type="text"
+                  placeholder="Nome ou apelido"
+                  value={newUserFullName}
+                  onChange={(e) => setNewUserFullName(e.target.value)}
+                  className="form-input"
+                  style={{ fontSize: '0.8125rem' }}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Nível de Acesso (Cargo)</label>
+                <select
+                  value={newUserRole}
+                  onChange={(e) => setNewUserRole(e.target.value as any)}
+                  className="form-select"
+                  style={{ fontSize: '0.8125rem' }}
+                >
+                  <option value="gestor">🚀 Gestor de Tráfego</option>
+                  <option value="coordenador">🛡️ Coordenador</option>
+                  <option value="admin">👑 Administrador</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <button
+                type="submit"
+                disabled={submittingUser || !newUserEmail || !newUserPassword}
+                className="btn-primary"
+                style={{ padding: '8px 18px', fontSize: '0.8125rem' }}
+              >
+                <UserPlus size={15} />
+                {submittingUser ? 'Criando usuário...' : 'Cadastrar Usuário'}
+              </button>
+            </div>
+          </form>
+
           {/* Members Table */}
           {profiles.length === 0 ? (
             <p style={{ fontSize: '0.8125rem', color: '#64748B' }}>
@@ -604,7 +764,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>
                     <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600 }}>Colaborador / E-mail</th>
                     <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600 }}>Cargo Atual</th>
-                    <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600, textAlign: 'right' }}>Alterar Nível</th>
+                    <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600 }}>Alterar Nível</th>
+                    <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600, textAlign: 'right' }}>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -656,7 +817,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                           </span>
                         </td>
 
-                        <td style={{ padding: '12px', textAlign: 'right' }}>
+                        <td style={{ padding: '12px' }}>
                           <select
                             value={p.role}
                             disabled={isUpdating}
@@ -675,6 +836,57 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                             <option value="gestor">🚀 Gestor</option>
                           </select>
                         </td>
+
+                        <td style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingPasswordUser({ id: p.id, email: p.email });
+                                setEditPasswordValue('');
+                              }}
+                              title="Redefinir senha do usuário"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '5px 10px',
+                                borderRadius: '6px',
+                                background: 'rgba(56, 189, 248, 0.1)',
+                                border: '1px solid rgba(56, 189, 248, 0.3)',
+                                color: '#38BDF8',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <KeyRound size={13} />
+                              Senha
+                            </button>
+
+                            {!isSelf && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(p.id, p.email)}
+                                title="Excluir colaborador"
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  color: '#F87171',
+                                  fontSize: '0.75rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <Trash2 size={13} />
+                                Excluir
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -682,6 +894,77 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {editingPasswordUser && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(4, 9, 20, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+          padding: '20px',
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound size={18} color="#00E5FF" />
+                <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#FFFFFF' }}>
+                  Redefinir Senha
+                </h4>
+              </div>
+              <button
+                onClick={() => setEditingPasswordUser(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8125rem', color: '#94A3B8', marginBottom: '16px' }}>
+              Defina uma nova senha para <strong style={{ color: '#FFFFFF' }}>{editingPasswordUser.email}</strong>.
+            </p>
+
+            <form onSubmit={handleSavePassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label className="form-label">Nova Senha * (mínimo 6 caracteres)</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="Digite a nova senha..."
+                  value={editPasswordValue}
+                  onChange={(e) => setEditPasswordValue(e.target.value)}
+                  className="form-input"
+                  style={{ fontSize: '0.875rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingPasswordUser(null)}
+                  className="btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '0.8125rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingPassword || editPasswordValue.length < 6}
+                  className="btn-primary"
+                  style={{ padding: '8px 16px', fontSize: '0.8125rem' }}
+                >
+                  {submittingPassword ? 'Salvando...' : 'Salvar Nova Senha'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
