@@ -19,7 +19,7 @@ export function App() {
     }
   }, []);
 
-  const { user, loading, signIn, signUp, signOut, isAuthenticated } = useAuth();
+  const { user, role, loading, signIn, signUp, signOut, isAuthenticated } = useAuth();
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'settings'>('dashboard');
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
 
@@ -64,13 +64,14 @@ export function App() {
     return <LoginPage onSignIn={signIn} onSignUp={signUp} />;
   }
 
-  // 4. Authenticated Agency Admin
+  // 4. Authenticated Agency Workspace
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Navbar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         user={user}
+        userRole={role}
         onSignOut={signOut}
       />
 
@@ -83,6 +84,7 @@ export function App() {
           />
         ) : (
           <SettingsPage
+            userRole={role}
             onRefreshDashboard={() => setDashboardRefreshKey((k) => k + 1)}
           />
         )}

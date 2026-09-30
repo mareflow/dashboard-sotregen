@@ -90,6 +90,8 @@ Deno.serve(async (req: Request) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
     const supabaseServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRole || supabaseAnonKey);
+
     let body: RequestBody;
     try {
       body = await req.json();
@@ -115,7 +117,6 @@ Deno.serve(async (req: Request) => {
     ];
 
     if (shareToken) {
-      const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRole || supabaseAnonKey);
       const { data: adAccount, error: adAccountError } = await supabaseAdmin
         .from("meta_ad_accounts")
         .select(`
@@ -219,9 +220,19 @@ Deno.serve(async (req: Request) => {
         visible_metrics?: string[];
       };
 
-      if (clientData.owner_id !== user.id) {
+      // Verify role in profiles table
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      const userRole = profile?.role || "gestor";
+      const hasFullAccess = userRole === "admin" || userRole === "coordenador";
+
+      if (!hasFullAccess && clientData.owner_id !== user.id) {
         return new Response(
-          JSON.stringify({ error: "Acesso negado: a conta informada pertence a outro usuário" }),
+          JSON.stringify({ error: "Acesso negado: a conta informada pertence a outro gestor" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -366,7 +377,87 @@ Deno.serve(async (req: Request) => {
       };
     });
 
-    // 5. Calculate Account Summary
+    // 5. Query Ad Sets Insights
+    let adsets: any[] = [];
+    try {
+      const adsetUrl = `https://graph.facebook.com/${metaApiVersion}/${realAccountId}/insights?level=adset&fields=campaign_id,campaign_name,adset_id,adset_name,spend,impressions,reach,frequency,clicks,ctr,cpc,cpm,actions,cost_per_action_type&time_range=${encodedTimeRange}&limit=100`;
+      const adsetRes = await fetch(adsetUrl, {
+        headers: { Authorization: `Bearer ${metaAccessToken}` },
+      });
+      const adsetJson = await adsetRes.json();
+      if (!adsetJson.error && Array.isArray(adsetJson.data)) {
+        adsets = adsetJson.data.map((row: any) => {
+          const spend = parseFloat(row.spend || "0");
+          const impressions = parseInt(row.impressions || "0", 10);
+          const reach = parseInt(row.reach || "0", 10);
+          const clicks = parseInt(row.clicks || "0", 10);
+          const leads = extractLeads(row.actions);
+          const cpl = extractCpl(spend, leads, row.cost_per_action_type);
+          const ctr = impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(2)) : parseFloat(row.ctr || "0");
+          const cpc = clicks > 0 ? Number((spend / clicks).toFixed(2)) : parseFloat(row.cpc || "0");
+          return {
+            adsetId: String(row.adset_id || ""),
+            adsetName: String(row.adset_name || "Sem Nome"),
+            campaignId: String(row.campaign_id || ""),
+            campaignName: String(row.campaign_name || ""),
+            spend: Number(spend.toFixed(2)),
+            impressions,
+            reach,
+            frequency: parseFloat(row.frequency || (reach > 0 ? (impressions / reach).toFixed(2) : "1")),
+            clicks,
+            leads,
+            cpl: Number(cpl.toFixed(2)),
+            ctr: Number(ctr.toFixed(2)),
+            cpc: Number(cpc.toFixed(2)),
+          };
+        });
+      }
+    } catch (err) {
+      console.warn("Could not fetch adsets insights:", err);
+    }
+
+    // 6. Query Ads Insights
+    let ads: any[] = [];
+    try {
+      const adsUrl = `https://graph.facebook.com/${metaApiVersion}/${realAccountId}/insights?level=ad&fields=campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,frequency,clicks,ctr,cpc,cpm,actions,cost_per_action_type&time_range=${encodedTimeRange}&limit=100`;
+      const adsRes = await fetch(adsUrl, {
+        headers: { Authorization: `Bearer ${metaAccessToken}` },
+      });
+      const adsJson = await adsRes.json();
+      if (!adsJson.error && Array.isArray(adsJson.data)) {
+        ads = adsJson.data.map((row: any) => {
+          const spend = parseFloat(row.spend || "0");
+          const impressions = parseInt(row.impressions || "0", 10);
+          const reach = parseInt(row.reach || "0", 10);
+          const clicks = parseInt(row.clicks || "0", 10);
+          const leads = extractLeads(row.actions);
+          const cpl = extractCpl(spend, leads, row.cost_per_action_type);
+          const ctr = impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(2)) : parseFloat(row.ctr || "0");
+          const cpc = clicks > 0 ? Number((spend / clicks).toFixed(2)) : parseFloat(row.cpc || "0");
+          return {
+            adId: String(row.ad_id || ""),
+            adName: String(row.ad_name || "Sem Nome"),
+            adsetId: String(row.adset_id || ""),
+            adsetName: String(row.adset_name || ""),
+            campaignId: String(row.campaign_id || ""),
+            campaignName: String(row.campaign_name || ""),
+            spend: Number(spend.toFixed(2)),
+            impressions,
+            reach,
+            frequency: parseFloat(row.frequency || (reach > 0 ? (impressions / reach).toFixed(2) : "1")),
+            clicks,
+            leads,
+            cpl: Number(cpl.toFixed(2)),
+            ctr: Number(ctr.toFixed(2)),
+            cpc: Number(cpc.toFixed(2)),
+          };
+        });
+      }
+    } catch (err) {
+      console.warn("Could not fetch ads insights:", err);
+    }
+
+    // 7. Calculate Account Summary
     const totalSpend = accountData
       ? parseFloat(accountData.spend || "0")
       : campaigns.reduce((acc, c) => acc + c.spend, 0);
@@ -427,6 +518,8 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         summary,
         campaigns,
+        adsets,
+        ads,
         visibleMetrics,
         accountInfo: {
           currency: metaAccountInfo?.currency || "BRL",

@@ -181,3 +181,28 @@ export async function deleteAdAccount(adAccountId: string): Promise<void> {
     throw new Error(`Erro ao excluir conta de anúncios: ${error.message}`);
   }
 }
+
+export async function fetchProfiles(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Erro ao buscar membros da equipe: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function updateUserRole(userId: string, newRole: 'admin' | 'coordenador' | 'gestor'): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ role: newRole, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+
+  if (error) {
+    throw new Error(`Erro ao atualizar cargo do usuário: ${error.message}`);
+  }
+}
+

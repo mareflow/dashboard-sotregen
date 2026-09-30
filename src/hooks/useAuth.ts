@@ -7,11 +7,31 @@ export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
+  const [profile, setProfile] = useState<any | null>(null);
+
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      if (!error && data) {
+        setProfile(data);
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar perfil do usuário:', err);
+    }
+  };
+
   useEffect(() => {
     // 1. Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      }
       setLoading(false);
     });
 
@@ -20,6 +40,11 @@ export function useAuth() {
       (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchProfile(session.user.id);
+        } else {
+          setProfile(null);
+        }
         setLoading(false);
       }
     );
@@ -50,15 +75,24 @@ export function useAuth() {
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    setProfile(null);
   };
+
+  const role = profile?.role || 'gestor';
 
   return {
     user,
     session,
+    profile,
+    role,
+    isAdmin: role === 'admin',
+    isCoordinator: role === 'coordenador',
+    isGestor: role === 'gestor',
     loading,
     signIn,
     signUp,
     signOut,
     isAuthenticated: !!user,
+    refreshProfile: () => user && fetchProfile(user.id),
   };
 }

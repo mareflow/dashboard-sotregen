@@ -19,18 +19,27 @@ import {
   createAdAccount,
   deleteClient,
   deleteAdAccount,
+  fetchProfiles,
+  updateUserRole,
 } from '../services/clientService';
 import { MetricsConfigModal } from '../components/MetricsConfigModal';
+import { Users as TeamIcon, UserCheck } from 'lucide-react';
 
 interface SettingsPageProps {
+  userRole?: 'admin' | 'coordenador' | 'gestor';
   onRefreshDashboard: () => void;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshDashboard }) => {
+export const SettingsPage: React.FC<SettingsPageProps> = ({
+  userRole = 'gestor',
+  onRefreshDashboard,
+}) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [adAccounts, setAdAccounts] = useState<MetaAdAccount[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
 
   // Form Client
   const [newClientName, setNewClientName] = useState('');
@@ -49,12 +58,24 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshDashboard }
   const loadData = async () => {
     setLoading(true);
     try {
-      const [fetchedClients, fetchedAccounts] = await Promise.all([
+      const promises: [Promise<any>, Promise<any>, Promise<any>?] = [
         fetchClients(),
         fetchAdAccounts(),
-      ]);
+      ];
+
+      if (userRole === 'admin' || userRole === 'coordenador') {
+        promises.push(fetchProfiles());
+      }
+
+      const results = await Promise.all(promises);
+      const fetchedClients = results[0];
+      const fetchedAccounts = results[1];
+      const fetchedProfiles = results[2] || [];
+
       setClients(fetchedClients);
       setAdAccounts(fetchedAccounts);
+      setProfiles(fetchedProfiles);
+
       if (fetchedClients.length > 0 && !selectedClientIdForAccount) {
         setSelectedClientIdForAccount(fetchedClients[0].id);
       }
@@ -68,7 +89,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshDashboard }
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [userRole]);
+
+  const handleUpdateRole = async (userId: string, newRole: 'admin' | 'coordenador' | 'gestor') => {
+    setUpdatingRoleId(userId);
+    setMessage(null);
+    try {
+      await updateUserRole(userId, newRole);
+      setProfiles((prev) =>
+        prev.map((p) => (p.id === userId ? { ...p, role: newRole } : p))
+      );
+      setMessage({ type: 'success', text: `Nível de acesso atualizado para "${newRole}" com sucesso!` });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Erro ao alterar nível de acesso.' });
+    } finally {
+      setUpdatingRoleId(null);
+    }
+  };
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -479,6 +516,174 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshDashboard }
           </div>
         )}
       </div>
+
+      {/* 4. Gestão de Equipe & Níveis de Acesso (Exclusivo Admin) */}
+      {userRole === 'admin' && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <TeamIcon size={20} color="#00E5FF" />
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#FFFFFF' }}>
+              Gestão de Equipe & Níveis de Acesso
+            </h3>
+            <span style={{
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(0, 168, 232, 0.25) 100%)',
+              color: '#C084FC',
+              border: '1px solid rgba(168, 85, 247, 0.4)',
+            }}>
+              👑 Painel do Administrador
+            </span>
+          </div>
+
+          <p style={{ fontSize: '0.8125rem', color: '#94A3B8', marginBottom: '20px' }}>
+            Defina o papel de cada colaborador da agência. As alterações de permissão entram em vigor imediatamente.
+          </p>
+
+          {/* Explanation of Roles */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gap: '12px',
+            marginBottom: '20px',
+          }}>
+            <div style={{
+              padding: '12px 14px',
+              borderRadius: '8px',
+              background: 'rgba(168, 85, 247, 0.08)',
+              border: '1px solid rgba(168, 85, 247, 0.2)',
+            }}>
+              <p style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#C084FC', marginBottom: '4px' }}>
+                👑 Administrador (Admin)
+              </p>
+              <p style={{ fontSize: '0.75rem', color: '#94A3B8', lineHeight: 1.4 }}>
+                Acesso total e irrestrito a todas as contas, clientes, configurações globais e permissões da equipe.
+              </p>
+            </div>
+
+            <div style={{
+              padding: '12px 14px',
+              borderRadius: '8px',
+              background: 'rgba(0, 168, 232, 0.08)',
+              border: '1px solid rgba(0, 168, 232, 0.2)',
+            }}>
+              <p style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#38BDF8', marginBottom: '4px' }}>
+                🛡️ Coordenador
+              </p>
+              <p style={{ fontSize: '0.75rem', color: '#94A3B8', lineHeight: 1.4 }}>
+                Visualiza e acompanha todas as contas de anúncios e clientes cadastrados por todos os gestores da agência.
+              </p>
+            </div>
+
+            <div style={{
+              padding: '12px 14px',
+              borderRadius: '8px',
+              background: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.2)',
+            }}>
+              <p style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#34D399', marginBottom: '4px' }}>
+                🚀 Gestor de Tráfego
+              </p>
+              <p style={{ fontSize: '0.75rem', color: '#94A3B8', lineHeight: 1.4 }}>
+                Cadastra e gerencia seus próprios clientes e contas de anúncios (visualiza exclusivamente os seus clientes).
+              </p>
+            </div>
+          </div>
+
+          {/* Members Table */}
+          {profiles.length === 0 ? (
+            <p style={{ fontSize: '0.8125rem', color: '#64748B' }}>
+              Carregando membros da equipe...
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>
+                    <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600 }}>Colaborador / E-mail</th>
+                    <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600 }}>Cargo Atual</th>
+                    <th style={{ padding: '10px 12px', color: '#94A3B8', fontWeight: 600, textAlign: 'right' }}>Alterar Nível</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profiles.map((p) => {
+                    const isSelf = p.email === 'ia.mareflow@gmail.com';
+                    const isUpdating = updatingRoleId === p.id;
+
+                    return (
+                      <tr
+                        key={p.id}
+                        style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}
+                      >
+                        <td style={{ padding: '12px', color: '#FFFFFF', fontWeight: 600 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <UserCheck size={16} color="#00A8E8" />
+                            <span>{p.email}</span>
+                            {isSelf && (
+                              <span style={{ fontSize: '0.65rem', color: '#00E5FF', background: 'rgba(0, 229, 255, 0.15)', padding: '1px 6px', borderRadius: '4px' }}>
+                                Você
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: '12px' }}>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            padding: '3px 10px',
+                            borderRadius: '6px',
+                            textTransform: 'uppercase',
+                            background: p.role === 'admin'
+                              ? 'rgba(168, 85, 247, 0.2)'
+                              : p.role === 'coordenador'
+                              ? 'rgba(0, 168, 232, 0.2)'
+                              : 'rgba(16, 185, 129, 0.2)',
+                            color: p.role === 'admin'
+                              ? '#C084FC'
+                              : p.role === 'coordenador'
+                              ? '#38BDF8'
+                              : '#34D399',
+                            border: p.role === 'admin'
+                              ? '1px solid rgba(168, 85, 247, 0.35)'
+                              : p.role === 'coordenador'
+                              ? '1px solid rgba(0, 168, 232, 0.35)'
+                              : '1px solid rgba(16, 185, 129, 0.35)',
+                          }}>
+                            {p.role === 'admin' ? '👑 Admin' : p.role === 'coordenador' ? '🛡️ Coordenador' : '🚀 Gestor'}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: '12px', textAlign: 'right' }}>
+                          <select
+                            value={p.role}
+                            disabled={isUpdating}
+                            onChange={(e) => handleUpdateRole(p.id, e.target.value as any)}
+                            className="form-select"
+                            style={{
+                              width: 'auto',
+                              display: 'inline-block',
+                              padding: '5px 10px',
+                              fontSize: '0.8125rem',
+                              fontWeight: 600,
+                            }}
+                          >
+                            <option value="admin">👑 Administrador</option>
+                            <option value="coordenador">🛡️ Coordenador</option>
+                            <option value="gestor">🚀 Gestor</option>
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Metrics Modal */}
       {modalClient && (

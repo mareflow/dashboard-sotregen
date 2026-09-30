@@ -6,6 +6,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Search } from 'lucide-react';
 interface CampaignsTableProps {
   campaigns: CampaignInsight[];
   visibleMetrics?: string[];
+  selectedCampaignId?: string | null;
+  onSelectCampaign?: (campaign: CampaignInsight | null) => void;
 }
 
 type SortField = keyof CampaignInsight;
@@ -16,6 +18,8 @@ export const CampaignsTable: React.FC<CampaignsTableProps> = ({
   visibleMetrics = [
     'spend', 'leads', 'cpl', 'ctr', 'cpc', 'cpm', 'clicks', 'impressions', 'reach', 'frequency'
   ],
+  selectedCampaignId,
+  onSelectCampaign,
 }) => {
   const [sortField, setSortField] = useState<SortField>('spend');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -73,11 +77,33 @@ export const CampaignsTable: React.FC<CampaignsTableProps> = ({
         marginBottom: '20px',
       }}>
         <div>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#FFFFFF' }}>
-            Desempenho por Campanha
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#FFFFFF' }}>
+              Desempenho por Campanha
+            </h3>
+            {selectedCampaignId && onSelectCampaign && (
+              <button
+                onClick={() => onSelectCampaign(null)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#F87171',
+                  fontSize: '0.725rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Limpar seleção (Ver todas)
+              </button>
+            )}
+          </div>
           <p style={{ fontSize: '0.8125rem', color: '#94A3B8', marginTop: '2px' }}>
-            {campaigns.length} {campaigns.length === 1 ? 'campanha encontrada' : 'campanhas encontradas'}
+            {campaigns.length} {campaigns.length === 1 ? 'campanha encontrada' : 'campanhas encontradas'} • Clique em uma linha para filtrar os dados da campanha
           </p>
         </div>
 
@@ -253,26 +279,58 @@ export const CampaignsTable: React.FC<CampaignsTableProps> = ({
                 </td>
               </tr>
             ) : (
-              filteredAndSortedCampaigns.map((row, idx) => (
-                <tr
-                  key={row.campaignId || idx}
-                  style={{
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                    background: idx % 2 === 0 ? 'rgba(12, 26, 54, 0.4)' : 'rgba(7, 18, 38, 0.2)',
-                    transition: 'background 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(0, 168, 232, 0.08)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = idx % 2 === 0 ? 'rgba(12, 26, 54, 0.4)' : 'rgba(7, 18, 38, 0.2)';
-                  }}
-                >
-                  <td style={{ padding: '14px 16px', fontWeight: 600, color: '#FFFFFF', maxWidth: '280px' }}>
-                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.campaignName}>
-                      {row.campaignName}
-                    </div>
-                  </td>
+              filteredAndSortedCampaigns.map((row, idx) => {
+                const isSelected = selectedCampaignId === row.campaignId;
+
+                return (
+                  <tr
+                    key={row.campaignId || idx}
+                    onClick={() => onSelectCampaign && onSelectCampaign(isSelected ? null : row)}
+                    style={{
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                      background: isSelected
+                        ? 'rgba(0, 168, 232, 0.18)'
+                        : idx % 2 === 0 ? 'rgba(12, 26, 54, 0.4)' : 'rgba(7, 18, 38, 0.2)',
+                      cursor: onSelectCampaign ? 'pointer' : 'default',
+                      transition: 'all 0.15s ease',
+                      outline: isSelected ? '1px solid #00E5FF' : 'none',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = 'rgba(0, 168, 232, 0.08)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = idx % 2 === 0 ? 'rgba(12, 26, 54, 0.4)' : 'rgba(7, 18, 38, 0.2)';
+                    }}
+                  >
+                    <td style={{ padding: '14px 16px', fontWeight: 600, color: '#FFFFFF', maxWidth: '300px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: isSelected ? '#00E5FF' : '#00A8E8',
+                          boxShadow: isSelected ? '0 0 10px #00E5FF' : 'none',
+                          flexShrink: 0,
+                        }} />
+                        <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.campaignName}>
+                          {row.campaignName}
+                        </div>
+                        {isSelected && (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(0, 229, 255, 0.2)',
+                            color: '#00E5FF',
+                            border: '1px solid rgba(0, 229, 255, 0.4)',
+                            marginLeft: '6px',
+                          }}>
+                            FILTRADA
+                          </span>
+                        )}
+                      </div>
+                    </td>
 
                   {isVisible('spend') && (
                     <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700, color: '#38BDF8' }}>
@@ -346,8 +404,8 @@ export const CampaignsTable: React.FC<CampaignsTableProps> = ({
                     </td>
                   )}
                 </tr>
-              ))
-            )}
+              );
+            }))}
           </tbody>
         </table>
       </div>

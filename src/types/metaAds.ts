@@ -32,9 +32,45 @@ export interface CampaignInsight {
   cpm: number;
 }
 
+export interface AdSetInsight {
+  adsetId: string;
+  adsetName: string;
+  campaignId: string;
+  campaignName: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency?: number;
+  clicks: number;
+  leads: number;
+  cpl: number;
+  ctr: number;
+  cpc: number;
+}
+
+export interface AdInsight {
+  adId: string;
+  adName: string;
+  adsetId: string;
+  adsetName: string;
+  campaignId: string;
+  campaignName: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency?: number;
+  clicks: number;
+  leads: number;
+  cpl: number;
+  ctr: number;
+  cpc: number;
+}
+
 export interface MetaInsightsResponse {
   summary: MetaInsightsSummary;
   campaigns: CampaignInsight[];
+  adsets?: AdSetInsight[];
+  ads?: AdInsight[];
   visibleMetrics?: string[];
   accountInfo?: {
     currency?: string;
@@ -43,6 +79,17 @@ export interface MetaInsightsResponse {
     balanceType?: string;
   };
 }
+
+export type UserRole = 'admin' | 'coordenador' | 'gestor';
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  full_name?: string;
+  role: UserRole;
+  created_at?: string;
+}
+
 
 export type MetricKey =
   | 'balance'

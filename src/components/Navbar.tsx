@@ -6,6 +6,7 @@ interface NavbarProps {
   currentTab: 'dashboard' | 'settings';
   onSelectTab: (tab: 'dashboard' | 'settings') => void;
   user: User | null;
+  userRole?: 'admin' | 'coordenador' | 'gestor';
   onSignOut: () => void;
 }
 
@@ -13,6 +14,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onSelectTab,
   user,
+  userRole = 'gestor',
   onSignOut,
 }) => {
   return (
@@ -130,19 +132,48 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* User Account / Logout */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {user && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: 'rgba(12, 26, 54, 0.7)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-            }}>
-              <UserIcon size={14} color="#00A8E8" />
-              <span style={{ fontSize: '0.8125rem', color: '#E2E8F0', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {user.email}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Role Badge */}
+              <span style={{
+                fontSize: '0.6875rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                padding: '3px 8px',
+                borderRadius: '6px',
+                background: userRole === 'admin'
+                  ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(0, 168, 232, 0.25) 100%)'
+                  : userRole === 'coordenador'
+                  ? 'rgba(0, 168, 232, 0.2)'
+                  : 'rgba(16, 185, 129, 0.2)',
+                color: userRole === 'admin'
+                  ? '#C084FC'
+                  : userRole === 'coordenador'
+                  ? '#38BDF8'
+                  : '#34D399',
+                border: userRole === 'admin'
+                  ? '1px solid rgba(168, 85, 247, 0.4)'
+                  : userRole === 'coordenador'
+                  ? '1px solid rgba(0, 168, 232, 0.4)'
+                  : '1px solid rgba(16, 185, 129, 0.4)',
+              }}>
+                {userRole === 'admin' ? '👑 Admin' : userRole === 'coordenador' ? '🛡️ Coordenador' : '🚀 Gestor'}
               </span>
+
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                borderRadius: '20px',
+                background: 'rgba(12, 26, 54, 0.7)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+              }}>
+                <UserIcon size={14} color="#00A8E8" />
+                <span style={{ fontSize: '0.8125rem', color: '#E2E8F0', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user.email}
+                </span>
+              </div>
             </div>
           )}
 
