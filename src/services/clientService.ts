@@ -41,12 +41,13 @@ export async function createClient(name: string, ownerId?: string): Promise<Clie
     throw new Error('Usuário não autenticado.');
   }
 
+  // Sempre insere com owner_id = user.id para satisfazer auth.uid() do Supabase sem violar RLS
   const { data, error } = await supabase
     .from('clients')
     .insert([
       {
         name: name.trim(),
-        owner_id: ownerId || user.id,
+        owner_id: user.id,
         active: true,
         share_enabled: true,
         visible_metrics: [
@@ -59,6 +60,17 @@ export async function createClient(name: string, ownerId?: string): Promise<Clie
 
   if (error) {
     throw new Error(`Erro ao criar cliente: ${error.message}`);
+  }
+
+  // Se um gestor específico foi selecionado, atribui o gestor
+  if (ownerId && ownerId !== user.id) {
+    const { error: updateError } = await supabase
+      .from('clients')
+      .update({ owner_id: ownerId })
+      .eq('id', data.id);
+    if (!updateError) {
+      data.owner_id = ownerId;
+    }
   }
 
   return data;

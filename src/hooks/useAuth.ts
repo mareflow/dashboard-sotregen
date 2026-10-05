@@ -78,7 +78,20 @@ export function useAuth() {
     setProfile(null);
   };
 
-  const role = profile?.role || 'gestor';
+  const email = user?.email?.toLowerCase().trim() || '';
+  const adminEmails = ['admin@sotregen', 'ia.mareflow@gmail.com'];
+  const coordinatorEmails = ['kauan@sotregen', 'gustavo@sotregen'];
+
+  let role: 'admin' | 'coordenador' | 'gestor' = 'gestor';
+  if (adminEmails.includes(email)) {
+    role = 'admin';
+  } else if (coordinatorEmails.includes(email) || profile?.full_name?.toLowerCase().includes('coordenador')) {
+    role = 'coordenador';
+  } else if (profile?.role === 'gestor' || profile?.full_name?.toLowerCase().includes('gestor')) {
+    role = 'gestor';
+  } else {
+    role = (profile?.role as any) || 'gestor';
+  }
 
   return {
     user,
