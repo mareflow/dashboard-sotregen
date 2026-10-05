@@ -24,24 +24,50 @@ export interface WindsorAccountOption {
 export async function fetchWindsorAccounts(): Promise<WindsorAccountOption[]> {
   try {
     const key = getWindsorKey();
-    const url = `https://connectors.windsor.ai/all?api_key=${key}&date_preset=last_30d&fields=account_id,account_name,campaign_id,spend`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.warn('Could not fetch Windsor accounts:', res.statusText);
-      return [];
-    }
-    const data = await res.json();
     const map = new Map<string, string>();
-    if (Array.isArray(data?.data)) {
-      for (const item of data.data) {
-        if (item.account_id && !map.has(item.account_id)) {
-          map.set(
-            String(item.account_id).trim(),
-            String(item.account_name || 'Conta sem nome').trim()
-          );
+
+    // 1. Fetch all authorized Meta Ad accounts from the dedicated Facebook connector
+    try {
+      const fbUrl = `https://connectors.windsor.ai/facebook?api_key=${key}&fields=account_id,account_name`;
+      const resFb = await fetch(fbUrl);
+      if (resFb.ok) {
+        const dataFb = await resFb.json();
+        if (Array.isArray(dataFb?.data)) {
+          for (const item of dataFb.data) {
+            if (item.account_id) {
+              map.set(
+                String(item.account_id).trim(),
+                String(item.account_name || 'Conta Meta').trim()
+              );
+            }
+          }
         }
       }
+    } catch (fbErr) {
+      console.warn('Erro ao consultar conector Facebook no Windsor:', fbErr);
     }
+
+    // 2. Fetch from All connector (last 30d) to merge any active accounts
+    try {
+      const allUrl = `https://connectors.windsor.ai/all?api_key=${key}&date_preset=last_30d&fields=account_id,account_name,campaign_id,spend`;
+      const resAll = await fetch(allUrl);
+      if (resAll.ok) {
+        const dataAll = await resAll.json();
+        if (Array.isArray(dataAll?.data)) {
+          for (const item of dataAll.data) {
+            if (item.account_id) {
+              map.set(
+                String(item.account_id).trim(),
+                String(item.account_name || 'Conta Meta').trim()
+              );
+            }
+          }
+        }
+      }
+    } catch (allErr) {
+      console.warn('Erro ao consultar conector All no Windsor:', allErr);
+    }
+
     return Array.from(map.entries()).map(([accountId, accountName]) => ({
       accountId,
       accountName,
@@ -153,10 +179,31 @@ export async function fetchMetaInsights(
   const allRows: any[] = Array.isArray(windsorData?.data) ? windsorData.data : [];
 
   // Filter rows for this specific account
-  const matchedRows = allRows.filter((r) => {
+  let matchedRows = allRows.filter((r) => {
     const rowAcc = String(r.account_id || '').replace(/^act_/, '').trim();
     return rowAcc === cleanAccountId;
   });
+
+  // If no rows matched in 'all' connector, query the dedicated facebook connector directly
+  if (matchedRows.length === 0) {
+    try {
+      const fbUrl = `https://connectors.windsor.ai/facebook?api_key=${key}&date_from=${encodeURIComponent(
+        range.since
+      )}&date_to=${encodeURIComponent(range.until)}&fields=${fields}`;
+      const resFb = await fetch(fbUrl);
+      if (resFb.ok) {
+        const dataFb = await resFb.json();
+        if (Array.isArray(dataFb?.data)) {
+          matchedRows = dataFb.data.filter((r: any) => {
+            const rowAcc = String(r.account_id || '').replace(/^act_/, '').trim();
+            return rowAcc === cleanAccountId;
+          });
+        }
+      }
+    } catch (fbErr) {
+      console.warn('Fallback FB connector error:', fbErr);
+    }
+  }
 
   // 3. Aggregate Ads
   const adsMap = new Map<string, any>();
