@@ -5,7 +5,6 @@ import { DashboardPage } from './pages/DashboardPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { ClientPortalPage } from './pages/ClientPortalPage';
-import { Waves } from 'lucide-react';
 
 export function App() {
   const [shareToken, setShareToken] = useState<string | null>(null);
@@ -40,20 +39,18 @@ export function App() {
         gap: '16px',
         background: '#040914',
       }}>
-        <div style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '12px',
-          background: 'linear-gradient(135deg, #00A8E8, #002B5C)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          animation: 'pulse 1.2s infinite ease-in-out',
-        }}>
-          <Waves size={26} color="#FFFFFF" />
-        </div>
+        <img
+          src="/logo-sotregen.png"
+          alt="Dashboard Sotregen"
+          style={{
+            height: '48px',
+            width: 'auto',
+            objectFit: 'contain',
+            animation: 'pulse 1.5s infinite ease-in-out',
+          }}
+        />
         <span style={{ fontSize: '0.875rem', color: '#94A3B8', fontWeight: 500 }}>
-          Carregando Maré Flow...
+          Carregando Dashboard Sotregen...
         </span>
       </div>
     );

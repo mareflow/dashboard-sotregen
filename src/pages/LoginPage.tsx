@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Waves, Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
   onSignIn: (email: string, pass: string) => Promise<any>;
@@ -63,21 +63,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignIn, onSignUp }) => {
           alignItems: 'center',
         }}
       >
-        {/* Brand Icon */}
-        <div style={{
-          width: '56px',
-          height: '56px',
-          borderRadius: '14px',
-          background: 'linear-gradient(135deg, #00A8E8 0%, #002B5C 100%)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: '16px',
-          boxShadow: '0 8px 24px rgba(0, 168, 232, 0.4)',
-          border: '1px solid rgba(255, 255, 255, 0.25)',
-        }}>
-          <Waves size={30} color="#FFFFFF" strokeWidth={2.4} />
-        </div>
+        {/* Brand Logo */}
+        <img
+          src="/logo-sotregen.png"
+          alt="Dashboard Sotregen"
+          style={{
+            maxHeight: '68px',
+            maxWidth: '220px',
+            width: 'auto',
+            objectFit: 'contain',
+            marginBottom: '16px',
+            filter: 'drop-shadow(0 4px 16px rgba(0, 168, 232, 0.35))',
+          }}
+        />
 
         <h1 style={{
           fontSize: '1.75rem',
@@ -88,7 +86,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignIn, onSignUp }) => {
           WebkitTextFillColor: 'transparent',
           marginBottom: '6px',
         }}>
-          Maré Flow
+          Dashboard Sotregen
         </h1>
         <p style={{ fontSize: '0.875rem', color: '#94A3B8', marginBottom: '28px', textAlign: 'center' }}>
           {isSignUp ? 'Crie sua conta para acessar o dashboard' : 'Faça login para gerenciar suas contas de anúncios'}

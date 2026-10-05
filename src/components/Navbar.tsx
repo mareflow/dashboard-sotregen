@@ -1,5 +1,5 @@
 import React from 'react';
-import { Waves, LayoutDashboard, Settings, LogOut, User as UserIcon } from 'lucide-react';
+import { LayoutDashboard, Settings, LogOut, User as UserIcon } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 interface NavbarProps {
@@ -39,19 +39,18 @@ export const Navbar: React.FC<NavbarProps> = ({
       }}>
         {/* Brand Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #00A8E8 0%, #002B5C 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 15px rgba(0, 168, 232, 0.35)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-          }}>
-            <Waves size={24} color="#FFFFFF" strokeWidth={2.2} />
-          </div>
+          <img
+            src="/logo-sotregen.png"
+            alt="Dashboard Sotregen"
+            style={{
+              height: '42px',
+              width: 'auto',
+              maxHeight: '42px',
+              objectFit: 'contain',
+              borderRadius: '8px',
+              filter: 'drop-shadow(0 2px 8px rgba(0, 168, 232, 0.3))',
+            }}
+          />
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{
@@ -62,7 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}>
-                Maré Flow
+                Dashboard Sotregen
               </span>
               <span style={{
                 fontSize: '0.65rem',
@@ -79,7 +78,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
             <p style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '-2px' }}>
-              Dashboard de Inteligência de Tráfego
+              Inteligência de Tráfego & Performance
             </p>
           </div>
         </div>

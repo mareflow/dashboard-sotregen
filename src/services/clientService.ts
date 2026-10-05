@@ -180,16 +180,42 @@ export async function updateAdAccountBalance(
 }
 
 export async function deleteClient(clientId: string): Promise<void> {
-  const { error } = await supabase.from('clients').delete().eq('id', clientId);
+  // 1. Delete associated ad accounts first to guarantee cascade cleanliness
+  const { error: accountsError } = await supabase
+    .from('meta_ad_accounts')
+    .delete()
+    .eq('client_id', clientId);
+  if (accountsError) {
+    console.warn('Erro ao limpar contas de anúncios associadas:', accountsError.message);
+  }
+
+  // 2. Delete client row and verify deletion
+  const { data, error } = await supabase
+    .from('clients')
+    .delete()
+    .eq('id', clientId)
+    .select();
+
   if (error) {
     throw new Error(`Erro ao excluir cliente: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    throw new Error('Não foi possível excluir o cliente no banco de dados. Verifique suas permissões de acesso.');
   }
 }
 
 export async function deleteAdAccount(adAccountId: string): Promise<void> {
-  const { error } = await supabase.from('meta_ad_accounts').delete().eq('id', adAccountId);
+  const { data, error } = await supabase
+    .from('meta_ad_accounts')
+    .delete()
+    .eq('id', adAccountId)
+    .select();
+
   if (error) {
     throw new Error(`Erro ao excluir conta de anúncios: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    throw new Error('Não foi possível excluir a conta de anúncios no banco de dados.');
   }
 }
 

@@ -1283,7 +1283,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <input
                   type="email"
                   required
-                  placeholder="gestor@mareflow.com"
+                  placeholder="gestor@sotregen"
                   value={newUserEmail}
                   onChange={(e) => setNewUserEmail(e.target.value)}
                   className="form-input"

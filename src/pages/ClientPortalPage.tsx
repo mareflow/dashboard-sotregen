@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Waves,
   DollarSign,
   Users,
   Target,
@@ -155,19 +154,18 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareToken }
         }}>
           {/* Brand & Client Title */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #00A8E8 0%, #002B5C 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 15px rgba(0, 168, 232, 0.35)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-            }}>
-              <Waves size={24} color="#FFFFFF" strokeWidth={2.2} />
-            </div>
+            <img
+              src="/logo-sotregen.png"
+              alt="Dashboard Sotregen"
+              style={{
+                height: '40px',
+                width: 'auto',
+                maxHeight: '40px',
+                objectFit: 'contain',
+                borderRadius: '8px',
+                filter: 'drop-shadow(0 2px 8px rgba(0, 168, 232, 0.3))',
+              }}
+            />
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#FFFFFF' }}>
@@ -188,7 +186,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareToken }
                 </span>
               </div>
               <p style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '-2px' }}>
-                Painel de Resultados de Tráfego Pago • Gerenciado por Maré Flow
+                Painel de Resultados de Tráfego Pago • Gerenciado por Dashboard Sotregen
               </p>
             </div>
           </div>
