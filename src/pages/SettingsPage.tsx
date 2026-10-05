@@ -28,6 +28,7 @@ import {
   deleteAdAccount,
   fetchProfiles,
   updateUserRole,
+  updateClientOwner,
   adminCreateUser,
   adminDeleteUser,
   adminUpdateUser,
@@ -73,9 +74,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [editPasswordValue, setEditPasswordValue] = useState('');
   const [submittingPassword, setSubmittingPassword] = useState(false);
 
-  // Windsor Accounts
+  // Windsor Accounts & Squads
   const [windsorAccounts, setWindsorAccounts] = useState<WindsorAccountOption[]>([]);
   const [loadingWindsor, setLoadingWindsor] = useState(false);
+  const [squadFilter, setSquadFilter] = useState<'all' | 'alpha' | 'omega' | 'available'>('all');
+  const [selectedGestorPerAccount, setSelectedGestorPerAccount] = useState<Record<string, string>>({});
 
   // Modal State
   const [modalClient, setModalClient] = useState<Client | null>(null);
@@ -84,16 +87,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const loadData = async () => {
     setLoading(true);
     try {
-      const promises: [Promise<any>, Promise<any>, Promise<any>?] = [
+      const results = await Promise.all([
         fetchClients(),
         fetchAdAccounts(),
-      ];
+        fetchProfiles(),
+      ]);
 
-      if (userRole === 'admin' || userRole === 'coordenador') {
-        promises.push(fetchProfiles());
-      }
-
-      const results = await Promise.all(promises);
       const fetchedClients = results[0];
       const fetchedAccounts = results[1];
       const fetchedProfiles = results[2] || [];
@@ -124,15 +123,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
-  const handleQuickImportWindsor = async (account: WindsorAccountOption) => {
+  const handleQuickImportWindsor = async (account: WindsorAccountOption, customOwnerId?: string) => {
     setMessage(null);
     try {
       let client = clients.find(
         (c) => c.name.trim().toLowerCase() === account.accountName.trim().toLowerCase()
       );
       if (!client) {
-        client = await createClient(account.accountName);
+        client = await createClient(account.accountName, customOwnerId);
         setClients((prev) => [...prev, client!]);
+      } else if (customOwnerId && client.owner_id !== customOwnerId) {
+        await updateClientOwner(client.id, customOwnerId);
+        client.owner_id = customOwnerId;
+        setClients((prev) =>
+          prev.map((c) => (c.id === client!.id ? { ...c, owner_id: customOwnerId } : c))
+        );
       }
 
       const cleanAccId = account.accountId.replace(/^act_/, '').trim();
@@ -152,11 +157,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setAdAccounts((prev) => [...prev, createdAcc]);
       setMessage({
         type: 'success',
-        text: `Cliente "${account.accountName}" e Conta vinculados com sucesso com 1 clique!`,
+        text: `Cliente "${account.accountName}" e Conta vinculados com sucesso!`,
       });
       onRefreshDashboard();
     } catch (err: any) {
       setMessage({ type: 'error', text: err?.message || 'Erro ao importar conta do Windsor.' });
+    }
+  };
+
+  const handleReassignOwner = async (clientId: string, newOwnerId: string) => {
+    try {
+      await updateClientOwner(clientId, newOwnerId);
+      setClients((prev) =>
+        prev.map((c) => (c.id === clientId ? { ...c, owner_id: newOwnerId } : c))
+      );
+      const ownerName = profiles.find((p) => p.id === newOwnerId)?.full_name || 'Novo gestor';
+      setMessage({
+        type: 'success',
+        text: `Gestor responsável atualizado para "${ownerName}" com sucesso!`,
+      });
+      onRefreshDashboard();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Erro ao alterar gestor responsável.' });
     }
   };
 
@@ -377,8 +399,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       <div
         className="glass-panel"
         style={{
-          padding: '20px 24px',
-          background: 'linear-gradient(135deg, rgba(0, 168, 232, 0.08) 0%, rgba(12, 26, 54, 0.7) 100%)',
+          padding: '22px 26px',
+          background: 'linear-gradient(135deg, rgba(0, 168, 232, 0.08) 0%, rgba(12, 26, 54, 0.75) 100%)',
           border: '1px solid rgba(0, 229, 255, 0.25)',
         }}
       >
@@ -388,38 +410,127 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: '12px',
+            gap: '14px',
             marginBottom: '16px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Sparkles size={20} color="#00E5FF" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Sparkles size={22} color="#00E5FF" />
             <div>
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFFFFF', margin: 0 }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#FFFFFF', margin: 0 }}>
                 Contas Detectadas na sua BM via Windsor.ai
               </h3>
-              <p style={{ fontSize: '0.8rem', color: '#94A3B8', margin: '2px 0 0 0' }}>
-                Todas as contas conectadas na sua Business Manager aparecem aqui para você vincular ao dashboard com 1 clique.
+              <p style={{ fontSize: '0.8rem', color: '#94A3B8', margin: '3px 0 0 0' }}>
+                Acesso unificado para todos os gestores. Vincule clientes, atribua gestores e visualize por Squad.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={async () => {
-              setLoadingWindsor(true);
-              const w = await fetchWindsorAccounts();
-              setWindsorAccounts(w);
-              setLoadingWindsor(false);
-            }}
-            disabled={loadingWindsor}
-            className="btn-secondary"
-            style={{ fontSize: '0.8rem', padding: '6px 14px' }}
-          >
-            <RefreshCw size={14} className={loadingWindsor ? 'animate-spin' : ''} />
-            {loadingWindsor ? 'Buscando...' : 'Atualizar Contas'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={async () => {
+                setLoadingWindsor(true);
+                const w = await fetchWindsorAccounts();
+                setWindsorAccounts(w);
+                setLoadingWindsor(false);
+              }}
+              disabled={loadingWindsor}
+              className="btn-secondary"
+              style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+            >
+              <RefreshCw size={14} className={loadingWindsor ? 'animate-spin' : ''} />
+              {loadingWindsor ? 'Buscando...' : 'Atualizar Contas'}
+            </button>
+          </div>
         </div>
+
+        {/* Squad Filter Tabs */}
+        {windsorAccounts.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
+              marginBottom: '18px',
+              paddingBottom: '14px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
+            }}
+          >
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94A3B8', marginRight: '4px' }}>
+              Filtrar por Squad:
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setSquadFilter('all')}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: squadFilter === 'all' ? '1px solid #00B4D8' : '1px solid rgba(255,255,255,0.1)',
+                background: squadFilter === 'all' ? 'rgba(0, 180, 216, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: squadFilter === 'all' ? '#38BDF8' : '#94A3B8',
+                cursor: 'pointer',
+              }}
+            >
+              Todas ({windsorAccounts.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSquadFilter('alpha')}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: squadFilter === 'alpha' ? '1px solid rgba(0, 229, 255, 0.5)' : '1px solid rgba(255,255,255,0.1)',
+                background: squadFilter === 'alpha' ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: squadFilter === 'alpha' ? '#00E5FF' : '#94A3B8',
+                cursor: 'pointer',
+              }}
+            >
+              🛡️ Squad Alpha
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSquadFilter('omega')}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: squadFilter === 'omega' ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.1)',
+                background: squadFilter === 'omega' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: squadFilter === 'omega' ? '#C084FC' : '#94A3B8',
+                cursor: 'pointer',
+              }}
+            >
+              ⚡ Squad Omega
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSquadFilter('available')}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: squadFilter === 'available' ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255,255,255,0.1)',
+                background: squadFilter === 'available' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: squadFilter === 'available' ? '#38BDF8' : '#94A3B8',
+                cursor: 'pointer',
+              }}
+            >
+              ⚪ Disponíveis (Não Vinculadas)
+            </button>
+          </div>
+        )}
 
         {loadingWindsor ? (
           <p style={{ fontSize: '0.85rem', color: '#94A3B8' }}>Buscando contas na API do Windsor.ai...</p>
@@ -431,114 +542,274 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: '12px',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gap: '14px',
             }}
           >
-            {windsorAccounts.map((w) => {
-              const cleanId = w.accountId.replace(/^act_/, '');
-              const linkedAccount = adAccounts.find(
-                (a) => a.account_id.replace(/^act_/, '') === cleanId
-              );
-              const linkedClient = linkedAccount
-                ? clients.find((c) => c.id === linkedAccount.client_id)
-                : null;
+            {windsorAccounts
+              .filter((w) => {
+                const cleanId = w.accountId.replace(/^act_/, '');
+                const linkedAccount = adAccounts.find(
+                  (a) => a.account_id.replace(/^act_/, '') === cleanId
+                );
+                const linkedClient = linkedAccount
+                  ? clients.find((c) => c.id === linkedAccount.client_id)
+                  : null;
+                const owner = linkedClient
+                  ? profiles.find((p) => p.id === linkedClient.owner_id)
+                  : null;
 
-              return (
-                <div
-                  key={w.accountId}
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '8px',
-                    background: linkedClient ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                    border: linkedClient
-                      ? '1px solid rgba(16, 185, 129, 0.3)'
-                      : '1px solid rgba(255, 255, 255, 0.08)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '8px',
-                      }}
-                    >
-                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#F8FAFC' }}>
-                        {w.accountName}
-                      </span>
-                      {linkedClient ? (
-                        <span
-                          style={{
-                            fontSize: '0.7rem',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            background: 'rgba(16, 185, 129, 0.2)',
-                            color: '#34D399',
-                            fontWeight: 600,
-                          }}
-                        >
-                          Vinculado
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: '0.7rem',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            background: 'rgba(0, 168, 232, 0.2)',
-                            color: '#38BDF8',
-                            fontWeight: 600,
-                          }}
-                        >
-                          Disponível
-                        </span>
-                      )}
-                    </div>
-                    <code
-                      style={{
-                        fontSize: '0.75rem',
-                        color: '#94A3B8',
-                        fontFamily: 'monospace',
-                        display: 'block',
-                        marginTop: '4px',
-                      }}
-                    >
-                      ID: {w.accountId}
-                    </code>
-                    {linkedClient && (
-                      <span
+                if (squadFilter === 'available') return !linkedClient;
+                if (squadFilter === 'alpha') return owner?.full_name?.includes('Alpha');
+                if (squadFilter === 'omega') return owner?.full_name?.includes('Omega');
+                return true;
+              })
+              .map((w) => {
+                const cleanId = w.accountId.replace(/^act_/, '');
+                const linkedAccount = adAccounts.find(
+                  (a) => a.account_id.replace(/^act_/, '') === cleanId
+                );
+                const linkedClient = linkedAccount
+                  ? clients.find((c) => c.id === linkedAccount.client_id)
+                  : null;
+                const owner = linkedClient
+                  ? profiles.find((p) => p.id === linkedClient.owner_id)
+                  : null;
+                const isAlpha = owner?.full_name?.includes('Alpha');
+                const isOmega = owner?.full_name?.includes('Omega');
+
+                return (
+                  <div
+                    key={w.accountId}
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: '10px',
+                      background: linkedClient
+                        ? 'rgba(16, 185, 129, 0.06)'
+                        : 'rgba(255, 255, 255, 0.03)',
+                      border: linkedClient
+                        ? '1px solid rgba(16, 185, 129, 0.35)'
+                        : '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                    }}
+                  >
+                    <div>
+                      {/* Top Header */}
+                      <div
                         style={{
-                          fontSize: '0.75rem',
-                          color: '#6EE7B7',
-                          display: 'block',
-                          marginTop: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          marginBottom: '6px',
                         }}
                       >
-                        Cliente: <strong>{linkedClient.name}</strong>
-                      </span>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#F8FAFC' }}>
+                          {w.accountName}
+                        </span>
+                        {linkedClient ? (
+                          <span
+                            style={{
+                              fontSize: '0.7rem',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              background: 'rgba(16, 185, 129, 0.2)',
+                              color: '#34D399',
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34D399' }} />
+                            Vinculado
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: '0.7rem',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              background: 'rgba(0, 168, 232, 0.2)',
+                              color: '#38BDF8',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Disponível
+                          </span>
+                        )}
+                      </div>
+
+                      <code
+                        style={{
+                          fontSize: '0.72rem',
+                          color: '#94A3B8',
+                          fontFamily: 'monospace',
+                          display: 'block',
+                          marginBottom: '8px',
+                        }}
+                      >
+                        ID: {w.accountId}
+                      </code>
+
+                      {/* Linked Client Info & Gestor */}
+                      {linkedClient ? (
+                        <div
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(0, 0, 0, 0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                          }}
+                        >
+                          <div style={{ fontSize: '0.78rem', color: '#E2E8F0' }}>
+                            Cliente: <strong style={{ color: '#6EE7B7' }}>{linkedClient.name}</strong>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+                              Gestor:
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '0.72rem',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: isAlpha
+                                  ? 'rgba(0, 229, 255, 0.15)'
+                                  : isOmega
+                                  ? 'rgba(168, 85, 247, 0.15)'
+                                  : 'rgba(255, 255, 255, 0.1)',
+                                color: isAlpha ? '#38BDF8' : isOmega ? '#C084FC' : '#CBD5E1',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {owner?.full_name || 'Não atribuído'}
+                            </span>
+                          </div>
+
+                          {/* Quick reassign inline */}
+                          <div style={{ marginTop: '4px' }}>
+                            <label style={{ fontSize: '0.7rem', color: '#64748B', display: 'block', marginBottom: '2px' }}>
+                              Alterar Gestor:
+                            </label>
+                            <select
+                              value={linkedClient.owner_id || ''}
+                              onChange={(e) => handleReassignOwner(linkedClient.id, e.target.value)}
+                              style={{
+                                width: '100%',
+                                fontSize: '0.75rem',
+                                padding: '4px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(12, 26, 54, 0.9)',
+                                color: '#F1F5F9',
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <optgroup label="🛡️ Squad Alpha">
+                                {profiles
+                                  .filter((p) => p.full_name?.includes('Alpha'))
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.full_name}
+                                    </option>
+                                  ))}
+                              </optgroup>
+                              <optgroup label="⚡ Squad Omega">
+                                {profiles
+                                  .filter((p) => p.full_name?.includes('Omega'))
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.full_name}
+                                    </option>
+                                  ))}
+                              </optgroup>
+                            </select>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Unlinked Account: Pick Gestor to Link */
+                        <div
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(0, 0, 0, 0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                          }}
+                        >
+                          <label style={{ fontSize: '0.72rem', color: '#94A3B8' }}>
+                            Atribuir ao Gestor:
+                          </label>
+                          <select
+                            value={selectedGestorPerAccount[w.accountId] || ''}
+                            onChange={(e) =>
+                              setSelectedGestorPerAccount((prev) => ({
+                                ...prev,
+                                [w.accountId]: e.target.value,
+                              }))
+                            }
+                            style={{
+                              width: '100%',
+                              fontSize: '0.75rem',
+                              padding: '5px 8px',
+                              borderRadius: '4px',
+                              background: 'rgba(12, 26, 54, 0.9)',
+                              color: '#F1F5F9',
+                              border: '1px solid rgba(255, 255, 255, 0.15)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <option value="">-- Escolha o Gestor --</option>
+                            <optgroup label="🛡️ Squad Alpha">
+                              {profiles
+                                .filter((p) => p.full_name?.includes('Alpha'))
+                                .map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.full_name}
+                                  </option>
+                                ))}
+                            </optgroup>
+                            <optgroup label="⚡ Squad Omega">
+                              {profiles
+                                .filter((p) => p.full_name?.includes('Omega'))
+                                .map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.full_name}
+                                  </option>
+                                ))}
+                            </optgroup>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {!linkedClient && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleQuickImportWindsor(
+                            w,
+                            selectedGestorPerAccount[w.accountId] || undefined
+                          )
+                        }
+                        className="btn-primary"
+                        style={{ padding: '7px 12px', fontSize: '0.75rem', justifyContent: 'center' }}
+                      >
+                        <Plus size={14} />
+                        Cadastrar & Vincular
+                      </button>
                     )}
                   </div>
-
-                  {!linkedClient && (
-                    <button
-                      type="button"
-                      onClick={() => handleQuickImportWindsor(w)}
-                      className="btn-primary"
-                      style={{ padding: '6px 10px', fontSize: '0.75rem', justifyContent: 'center' }}
-                    >
-                      <Plus size={13} />
-                      Cadastrar Cliente & Vincular
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
       </div>
@@ -711,7 +982,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     gap: '12px',
                     marginBottom: '14px',
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <Building size={18} color="#00A8E8" />
                       <span style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFFFFF' }}>
                         {client.name}
@@ -734,6 +1005,73 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       }}>
                         {activeMetricsCount} métricas ativas
                       </span>
+
+                      {/* Gestor Responsável */}
+                      {(() => {
+                        const owner = profiles.find((p) => p.id === client.owner_id);
+                        const isAlpha = owner?.full_name?.includes('Alpha');
+                        const isOmega = owner?.full_name?.includes('Omega');
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                background: isAlpha
+                                  ? 'rgba(0, 229, 255, 0.15)'
+                                  : isOmega
+                                  ? 'rgba(168, 85, 247, 0.15)'
+                                  : 'rgba(255, 255, 255, 0.08)',
+                                color: isAlpha ? '#38BDF8' : isOmega ? '#C084FC' : '#94A3B8',
+                                border: isAlpha
+                                  ? '1px solid rgba(0, 229, 255, 0.3)'
+                                  : isOmega
+                                  ? '1px solid rgba(168, 85, 247, 0.3)'
+                                  : '1px solid rgba(255, 255, 255, 0.1)',
+                                fontWeight: 600,
+                              }}
+                            >
+                              👤 Gestor: {owner?.full_name || 'Não atribuído'}
+                            </span>
+
+                            <select
+                              value={client.owner_id || ''}
+                              onChange={(e) => handleReassignOwner(client.id, e.target.value)}
+                              title="Alterar Gestor Responsável"
+                              style={{
+                                fontSize: '0.72rem',
+                                padding: '3px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(12, 26, 54, 0.9)',
+                                color: '#CBD5E1',
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <option value="">Alterar Gestor...</option>
+                              <optgroup label="🛡️ Squad Alpha">
+                                {profiles
+                                  .filter((p) => p.full_name?.includes('Alpha'))
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.full_name}
+                                    </option>
+                                  ))}
+                              </optgroup>
+                              <optgroup label="⚡ Squad Omega">
+                                {profiles
+                                  .filter((p) => p.full_name?.includes('Omega'))
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.full_name}
+                                    </option>
+                                  ))}
+                              </optgroup>
+                            </select>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -35,7 +35,7 @@ export async function fetchAdAccounts(clientId?: string): Promise<MetaAdAccount[
   return data || [];
 }
 
-export async function createClient(name: string): Promise<Client> {
+export async function createClient(name: string, ownerId?: string): Promise<Client> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     throw new Error('Usuário não autenticado.');
@@ -46,7 +46,7 @@ export async function createClient(name: string): Promise<Client> {
     .insert([
       {
         name: name.trim(),
-        owner_id: user.id,
+        owner_id: ownerId || user.id,
         active: true,
         share_enabled: true,
         visible_metrics: [
@@ -62,6 +62,17 @@ export async function createClient(name: string): Promise<Client> {
   }
 
   return data;
+}
+
+export async function updateClientOwner(clientId: string, ownerId: string): Promise<void> {
+  const { error } = await supabase
+    .from('clients')
+    .update({ owner_id: ownerId })
+    .eq('id', clientId);
+
+  if (error) {
+    throw new Error(`Erro ao atualizar gestor responsável: ${error.message}`);
+  }
 }
 
 export async function updateClientMetrics(clientId: string, visibleMetrics: string[]): Promise<void> {
