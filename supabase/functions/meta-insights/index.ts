@@ -8,69 +8,11 @@ const corsHeaders = {
 };
 
 interface RequestBody {
-  accountId: string;
-  since: string;
-  until: string;
+  action?: string;
+  accountId?: string;
+  since?: string;
+  until?: string;
   shareToken?: string;
-}
-
-interface ActionMetric {
-  action_type: string;
-  value: string | number;
-}
-
-function extractLeads(actions?: ActionMetric[]): number {
-  if (!actions || !Array.isArray(actions)) return 0;
-
-  const standardLead = actions.find((a) => a.action_type === "lead");
-  if (standardLead) return parseFloat(String(standardLead.value)) || 0;
-
-  const groupedLead = actions.find((a) => a.action_type === "onsite_conversion.lead_grouped");
-  if (groupedLead) return parseFloat(String(groupedLead.value)) || 0;
-
-  const otherLead = actions.find((a) =>
-    a.action_type === "omni_lead" ||
-    a.action_type === "contact" ||
-    a.action_type === "submit_application" ||
-    a.action_type.includes("lead")
-  );
-  if (otherLead) return parseFloat(String(otherLead.value)) || 0;
-
-  return 0;
-}
-
-function extractPurchases(actions?: ActionMetric[]): number {
-  if (!actions || !Array.isArray(actions)) return 0;
-  const purchase = actions.find((a) => a.action_type === "purchase" || a.action_type === "omni_purchase");
-  return purchase ? parseFloat(String(purchase.value)) || 0 : 0;
-}
-
-function extractRoas(actionValues?: ActionMetric[], spend?: number): number {
-  if (!actionValues || !Array.isArray(actionValues) || !spend || spend <= 0) return 0;
-  const purchaseValue = actionValues.find((a) => a.action_type === "purchase" || a.action_type === "omni_purchase");
-  if (purchaseValue) {
-    const val = parseFloat(String(purchaseValue.value)) || 0;
-    return Number((val / spend).toFixed(2));
-  }
-  return 0;
-}
-
-function extractCpl(
-  spend: number,
-  leads: number,
-  costPerActions?: ActionMetric[]
-): number {
-  if (costPerActions && Array.isArray(costPerActions)) {
-    const standardCost = costPerActions.find((c) => c.action_type === "lead");
-    if (standardCost) return parseFloat(String(standardCost.value)) || 0;
-
-    const groupedCost = costPerActions.find((c) => c.action_type === "onsite_conversion.lead_grouped");
-    if (groupedCost) return parseFloat(String(groupedCost.value)) || 0;
-  }
-  if (leads > 0 && spend > 0) {
-    return Number((spend / leads).toFixed(2));
-  }
-  return 0;
 }
 
 Deno.serve(async (req: Request) => {
@@ -89,6 +31,7 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
     const supabaseServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const windsorApiKey = Deno.env.get("WINDSOR_API_KEY") || "fe98bf89fbd0a64f1aac8f163f02ee42f0a4";
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRole || supabaseAnonKey);
 
@@ -102,6 +45,40 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Action 1: List all connected ad accounts from Windsor.ai
+    if (body.action === "list_windsor_accounts") {
+      try {
+        const listUrl = `https://connectors.windsor.ai/all?api_key=${windsorApiKey}&date_preset=last_30d&fields=account_id,account_name,campaign_id,spend`;
+        const res = await fetch(listUrl);
+        const json = await res.json();
+
+        const accountMap = new Map<string, string>();
+        if (Array.isArray(json.data)) {
+          for (const item of json.data) {
+            if (item.account_id && !accountMap.has(item.account_id)) {
+              accountMap.set(String(item.account_id).trim(), String(item.account_name || "Sem Nome").trim());
+            }
+          }
+        }
+
+        const accounts = Array.from(accountMap.entries()).map(([id, name]) => ({
+          accountId: id,
+          accountName: name,
+        }));
+
+        return new Response(JSON.stringify({ accounts }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ error: "Erro ao consultar contas no Windsor.ai", details: err?.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // Action 2: Get Insights for a specific account
     const { accountId, since, until, shareToken } = body;
     if (!accountId || !since || !until) {
       return new Response(
@@ -220,7 +197,6 @@ Deno.serve(async (req: Request) => {
         visible_metrics?: string[];
       };
 
-      // Verify role in profiles table
       const { data: profile } = await supabaseAdmin
         .from("profiles")
         .select("role")
@@ -244,274 +220,212 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (!realAccountId.startsWith("act_")) {
-      realAccountId = `act_${realAccountId}`;
-    }
+    // Clean numeric account id (remove act_ prefix if present)
+    const cleanAccountId = realAccountId.replace(/^act_/, "").trim();
 
-    const metaAccessToken = Deno.env.get("META_ACCESS_TOKEN");
-    const metaApiVersion = Deno.env.get("META_GRAPH_API_VERSION") || "v26.0";
+    // Query Windsor.ai for marketing data
+    const fields = [
+      "account_id",
+      "account_name",
+      "campaign_id",
+      "campaign",
+      "adset_id",
+      "adset_name",
+      "ad_id",
+      "ad_name",
+      "clicks",
+      "spend",
+      "impressions",
+      "reach",
+      "actions_lead",
+      "cost_per_action_type_lead",
+      "cpc",
+      "cpm",
+      "ctr",
+    ].join(",");
 
-    if (!metaAccessToken) {
+    const windsorUrl = `https://connectors.windsor.ai/all?api_key=${windsorApiKey}&date_from=${encodeURIComponent(since)}&date_to=${encodeURIComponent(until)}&fields=${fields}`;
+
+    console.log(`Querying Windsor.ai for account ${cleanAccountId} from ${since} to ${until}`);
+    const windsorRes = await fetch(windsorUrl);
+
+    if (!windsorRes.ok) {
+      const errText = await windsorRes.text();
+      console.error("Windsor API error:", errText);
       return new Response(
         JSON.stringify({
-          error: "META_ACCESS_TOKEN não está configurado nas Secrets do Supabase. Configure o secret no painel do Supabase para habilitar as consultas em tempo real.",
-          code: "MISSING_META_TOKEN",
+          error: "Erro na consulta aos dados via Windsor.ai",
+          details: errText,
         }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const timeRangeStr = JSON.stringify({ since, until });
-    const encodedTimeRange = encodeURIComponent(timeRangeStr);
+    const windsorData = await windsorRes.json();
+    const allRows: any[] = Array.isArray(windsorData?.data) ? windsorData.data : [];
 
-    // 1. Query Ad Account Details (Balance, Spend Cap, Currency)
-    let metaAccountInfo: any = null;
-    try {
-      const accDetailsUrl = `https://graph.facebook.com/${metaApiVersion}/${realAccountId}?fields=name,account_id,account_status,balance,currency,spend_cap,amount_spent`;
-      const accRes = await fetch(accDetailsUrl, {
-        headers: { Authorization: `Bearer ${metaAccessToken}` },
-      });
-      const accJson = await accRes.json();
-      if (!accJson.error) {
-        metaAccountInfo = accJson;
-      } else {
-        console.warn("Could not fetch account balance from Meta:", accJson.error);
-      }
-    } catch (e) {
-      console.warn("Account details fetch error:", e);
-    }
+    // Filter rows for this specific ad account
+    const matchedRows = allRows.filter((row: any) => {
+      const rowAccId = String(row.account_id || "").replace(/^act_/, "").trim();
+      return rowAccId === cleanAccountId;
+    });
 
-    // Determine account balance
-    let accountBalance = 0;
-    if (adAccountRecord?.balance_type === "manual" && adAccountRecord?.manual_balance !== null) {
-      accountBalance = Number(adAccountRecord.manual_balance) || 0;
-    } else if (metaAccountInfo) {
-      // In Meta API, balance / spend_cap are returned in currency subunit (e.g. cents)
-      const rawBalance = parseFloat(metaAccountInfo.balance || "0");
-      const spendCap = parseFloat(metaAccountInfo.spend_cap || "0");
-      const amountSpent = parseFloat(metaAccountInfo.amount_spent || "0");
+    console.log(`Matched ${matchedRows.length} rows for account ${cleanAccountId}`);
 
-      if (spendCap > 0 && amountSpent >= 0) {
-        accountBalance = Number(((spendCap - amountSpent) / 100).toFixed(2));
-      } else if (rawBalance !== 0) {
-        accountBalance = Number((rawBalance / 100).toFixed(2));
-      }
-    }
-
-    // 2. Query Campaign Insights
-    let campaignUrl: string | null = `https://graph.facebook.com/${metaApiVersion}/${realAccountId}/insights?level=campaign&fields=campaign_id,campaign_name,spend,impressions,reach,frequency,clicks,ctr,cpc,cpm,actions,cost_per_action_type,action_values&time_range=${encodedTimeRange}&limit=100`;
-
-    const allCampaignRows: any[] = [];
-    while (campaignUrl) {
-      const response = await fetch(campaignUrl, {
-        headers: { Authorization: `Bearer ${metaAccessToken}` },
-      });
-      const json = await response.json();
-
-      if (json.error) {
-        console.error("Meta API Campaign Error:", json.error);
-        return new Response(
-          JSON.stringify({
-            error: "Erro na consulta à Meta Marketing API",
-            details: json.error.message,
-            type: json.error.type,
-            fbtrace_id: json.error.fbtrace_id,
-          }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (Array.isArray(json.data)) {
-        allCampaignRows.push(...json.data);
-      }
-
-      campaignUrl = json.paging?.next || null;
-    }
-
-    // 3. Query Account-level Insights for accurate deduplicated Reach and Totals
-    const accountUrl = `https://graph.facebook.com/${metaApiVersion}/${realAccountId}/insights?fields=spend,impressions,reach,frequency,clicks,ctr,cpc,cpm,actions,cost_per_action_type,action_values&time_range=${encodedTimeRange}`;
-    let accountData: any = null;
-
-    try {
-      const accountRes = await fetch(accountUrl, {
-        headers: { Authorization: `Bearer ${metaAccessToken}` },
-      });
-      const accountJson = await accountRes.json();
-      if (!accountJson.error && Array.isArray(accountJson.data) && accountJson.data.length > 0) {
-        accountData = accountJson.data[0];
-      }
-    } catch (err) {
-      console.warn("Could not fetch account-level insights, falling back to campaign aggregation:", err);
-    }
-
-    // 4. Normalize Campaign Data
-    const campaigns = allCampaignRows.map((row: any) => {
+    // Aggregate Ads
+    const adsMap = new Map<string, any>();
+    for (const row of matchedRows) {
+      const adId = String(row.ad_id || row.campaign_id || Math.random().toString());
       const spend = parseFloat(row.spend || "0");
       const impressions = parseInt(row.impressions || "0", 10);
       const reach = parseInt(row.reach || "0", 10);
-      const frequency = parseFloat(row.frequency || (reach > 0 ? (impressions / reach).toFixed(2) : "1"));
       const clicks = parseInt(row.clicks || "0", 10);
-      const leads = extractLeads(row.actions);
-      const purchases = extractPurchases(row.actions);
-      const roas = extractRoas(row.action_values, spend);
-      const cpl = extractCpl(spend, leads, row.cost_per_action_type);
-      const ctr = impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(2)) : parseFloat(row.ctr || "0");
-      const cpc = clicks > 0 ? Number((spend / clicks).toFixed(2)) : parseFloat(row.cpc || "0");
-      const cpm = impressions > 0 ? Number(((spend / impressions) * 1000).toFixed(2)) : parseFloat(row.cpm || "0");
+      const leads = parseFloat(row.actions_lead || "0");
 
+      if (!adsMap.has(adId)) {
+        adsMap.set(adId, {
+          adId,
+          adName: String(row.ad_name || "Anúncio"),
+          adsetId: String(row.adset_id || ""),
+          adsetName: String(row.adset_name || ""),
+          campaignId: String(row.campaign_id || ""),
+          campaignName: String(row.campaign || ""),
+          spend: 0,
+          impressions: 0,
+          reach: 0,
+          clicks: 0,
+          leads: 0,
+        });
+      }
+
+      const existing = adsMap.get(adId);
+      existing.spend += spend;
+      existing.impressions += impressions;
+      existing.reach += reach;
+      existing.clicks += clicks;
+      existing.leads += leads;
+    }
+
+    const ads = Array.from(adsMap.values()).map((ad) => {
+      const cpl = ad.leads > 0 ? Number((ad.spend / ad.leads).toFixed(2)) : 0;
+      const ctr = ad.impressions > 0 ? Number(((ad.clicks / ad.impressions) * 100).toFixed(2)) : 0;
+      const cpc = ad.clicks > 0 ? Number((ad.spend / ad.clicks).toFixed(2)) : 0;
       return {
-        campaignId: String(row.campaign_id || ""),
-        campaignName: String(row.campaign_name || "Sem Nome"),
-        spend: Number(spend.toFixed(2)),
-        impressions,
-        reach,
-        frequency: Number(frequency.toFixed(2)),
-        clicks,
-        leads,
-        purchases,
-        roas,
-        cpl: Number(cpl.toFixed(2)),
-        ctr: Number(ctr.toFixed(2)),
-        cpc: Number(cpc.toFixed(2)),
-        cpm: Number(cpm.toFixed(2)),
+        ...ad,
+        spend: Number(ad.spend.toFixed(2)),
+        cpl,
+        ctr,
+        cpc,
       };
     });
 
-    // 5. Query Ad Sets Insights
-    let adsets: any[] = [];
-    try {
-      const adsetUrl = `https://graph.facebook.com/${metaApiVersion}/${realAccountId}/insights?level=adset&fields=campaign_id,campaign_name,adset_id,adset_name,spend,impressions,reach,frequency,clicks,ctr,cpc,cpm,actions,cost_per_action_type&time_range=${encodedTimeRange}&limit=100`;
-      const adsetRes = await fetch(adsetUrl, {
-        headers: { Authorization: `Bearer ${metaAccessToken}` },
-      });
-      const adsetJson = await adsetRes.json();
-      if (!adsetJson.error && Array.isArray(adsetJson.data)) {
-        adsets = adsetJson.data.map((row: any) => {
-          const spend = parseFloat(row.spend || "0");
-          const impressions = parseInt(row.impressions || "0", 10);
-          const reach = parseInt(row.reach || "0", 10);
-          const clicks = parseInt(row.clicks || "0", 10);
-          const leads = extractLeads(row.actions);
-          const cpl = extractCpl(spend, leads, row.cost_per_action_type);
-          const ctr = impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(2)) : parseFloat(row.ctr || "0");
-          const cpc = clicks > 0 ? Number((spend / clicks).toFixed(2)) : parseFloat(row.cpc || "0");
-          return {
-            adsetId: String(row.adset_id || ""),
-            adsetName: String(row.adset_name || "Sem Nome"),
-            campaignId: String(row.campaign_id || ""),
-            campaignName: String(row.campaign_name || ""),
-            spend: Number(spend.toFixed(2)),
-            impressions,
-            reach,
-            frequency: parseFloat(row.frequency || (reach > 0 ? (impressions / reach).toFixed(2) : "1")),
-            clicks,
-            leads,
-            cpl: Number(cpl.toFixed(2)),
-            ctr: Number(ctr.toFixed(2)),
-            cpc: Number(cpc.toFixed(2)),
-          };
+    // Aggregate AdSets
+    const adsetsMap = new Map<string, any>();
+    for (const ad of ads) {
+      const adsetId = ad.adsetId || ad.campaignId || "default";
+      if (!adsetsMap.has(adsetId)) {
+        adsetsMap.set(adsetId, {
+          adsetId,
+          adsetName: ad.adsetName || "Conjunto",
+          campaignId: ad.campaignId,
+          campaignName: ad.campaignName,
+          spend: 0,
+          impressions: 0,
+          reach: 0,
+          clicks: 0,
+          leads: 0,
         });
       }
-    } catch (err) {
-      console.warn("Could not fetch adsets insights:", err);
+      const existing = adsetsMap.get(adsetId);
+      existing.spend += ad.spend;
+      existing.impressions += ad.impressions;
+      existing.reach += ad.reach;
+      existing.clicks += ad.clicks;
+      existing.leads += ad.leads;
     }
 
-    // 6. Query Ads Insights
-    let ads: any[] = [];
-    try {
-      const adsUrl = `https://graph.facebook.com/${metaApiVersion}/${realAccountId}/insights?level=ad&fields=campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,frequency,clicks,ctr,cpc,cpm,actions,cost_per_action_type&time_range=${encodedTimeRange}&limit=100`;
-      const adsRes = await fetch(adsUrl, {
-        headers: { Authorization: `Bearer ${metaAccessToken}` },
-      });
-      const adsJson = await adsRes.json();
-      if (!adsJson.error && Array.isArray(adsJson.data)) {
-        ads = adsJson.data.map((row: any) => {
-          const spend = parseFloat(row.spend || "0");
-          const impressions = parseInt(row.impressions || "0", 10);
-          const reach = parseInt(row.reach || "0", 10);
-          const clicks = parseInt(row.clicks || "0", 10);
-          const leads = extractLeads(row.actions);
-          const cpl = extractCpl(spend, leads, row.cost_per_action_type);
-          const ctr = impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(2)) : parseFloat(row.ctr || "0");
-          const cpc = clicks > 0 ? Number((spend / clicks).toFixed(2)) : parseFloat(row.cpc || "0");
-          return {
-            adId: String(row.ad_id || ""),
-            adName: String(row.ad_name || "Sem Nome"),
-            adsetId: String(row.adset_id || ""),
-            adsetName: String(row.adset_name || ""),
-            campaignId: String(row.campaign_id || ""),
-            campaignName: String(row.campaign_name || ""),
-            spend: Number(spend.toFixed(2)),
-            impressions,
-            reach,
-            frequency: parseFloat(row.frequency || (reach > 0 ? (impressions / reach).toFixed(2) : "1")),
-            clicks,
-            leads,
-            cpl: Number(cpl.toFixed(2)),
-            ctr: Number(ctr.toFixed(2)),
-            cpc: Number(cpc.toFixed(2)),
-          };
+    const adsets = Array.from(adsetsMap.values()).map((adset) => {
+      const cpl = adset.leads > 0 ? Number((adset.spend / adset.leads).toFixed(2)) : 0;
+      const ctr = adset.impressions > 0 ? Number(((adset.clicks / adset.impressions) * 100).toFixed(2)) : 0;
+      const cpc = adset.clicks > 0 ? Number((adset.spend / adset.clicks).toFixed(2)) : 0;
+      return {
+        ...adset,
+        spend: Number(adset.spend.toFixed(2)),
+        cpl,
+        ctr,
+        cpc,
+      };
+    });
+
+    // Aggregate Campaigns
+    const campaignsMap = new Map<string, any>();
+    for (const adset of adsets) {
+      const campId = adset.campaignId || "default";
+      if (!campaignsMap.has(campId)) {
+        campaignsMap.set(campId, {
+          campaignId: campId,
+          campaignName: adset.campaignName || "Campanha",
+          spend: 0,
+          impressions: 0,
+          reach: 0,
+          clicks: 0,
+          leads: 0,
         });
       }
-    } catch (err) {
-      console.warn("Could not fetch ads insights:", err);
+      const existing = campaignsMap.get(campId);
+      existing.spend += adset.spend;
+      existing.impressions += adset.impressions;
+      existing.reach += adset.reach;
+      existing.clicks += adset.clicks;
+      existing.leads += adset.leads;
     }
 
-    // 7. Calculate Account Summary
-    const totalSpend = accountData
-      ? parseFloat(accountData.spend || "0")
-      : campaigns.reduce((acc, c) => acc + c.spend, 0);
+    const campaigns = Array.from(campaignsMap.values()).map((camp) => {
+      const cpl = camp.leads > 0 ? Number((camp.spend / camp.leads).toFixed(2)) : 0;
+      const ctr = camp.impressions > 0 ? Number(((camp.clicks / camp.impressions) * 100).toFixed(2)) : 0;
+      const cpc = camp.clicks > 0 ? Number((camp.spend / camp.clicks).toFixed(2)) : 0;
+      const cpm = camp.impressions > 0 ? Number(((camp.spend / camp.impressions) * 1000).toFixed(2)) : 0;
+      return {
+        ...camp,
+        spend: Number(camp.spend.toFixed(2)),
+        cpl,
+        ctr,
+        cpc,
+        cpm,
+      };
+    });
 
-    const totalImpressions = accountData
-      ? parseInt(accountData.impressions || "0", 10)
-      : campaigns.reduce((acc, c) => acc + c.impressions, 0);
-
-    const totalReach = accountData
-      ? parseInt(accountData.reach || "0", 10)
-      : campaigns.reduce((acc, c) => acc + c.reach, 0);
-
-    const totalFrequency = accountData?.frequency
-      ? parseFloat(accountData.frequency)
-      : totalReach > 0 ? Number((totalImpressions / totalReach).toFixed(2)) : 1;
-
-    const totalClicks = accountData
-      ? parseInt(accountData.clicks || "0", 10)
-      : campaigns.reduce((acc, c) => acc + c.clicks, 0);
-
-    const totalLeads = accountData
-      ? extractLeads(accountData.actions)
-      : campaigns.reduce((acc, c) => acc + c.leads, 0);
-
-    const totalPurchases = accountData
-      ? extractPurchases(accountData.actions)
-      : campaigns.reduce((acc, c) => acc + (c.purchases || 0), 0);
-
-    const totalRoas = accountData
-      ? extractRoas(accountData.action_values, totalSpend)
-      : (totalSpend > 0 ? campaigns.reduce((acc, c) => acc + (c.roas || 0), 0) : 0);
+    // Summary calculations
+    const totalSpend = campaigns.reduce((acc, c) => acc + c.spend, 0);
+    const totalImpressions = campaigns.reduce((acc, c) => acc + c.impressions, 0);
+    const totalReach = campaigns.reduce((acc, c) => acc + c.reach, 0);
+    const totalClicks = campaigns.reduce((acc, c) => acc + c.clicks, 0);
+    const totalLeads = campaigns.reduce((acc, c) => acc + c.leads, 0);
 
     const totalCtr = totalImpressions > 0 ? Number(((totalClicks / totalImpressions) * 100).toFixed(2)) : 0;
     const totalCpc = totalClicks > 0 ? Number((totalSpend / totalClicks).toFixed(2)) : 0;
-    const totalCpl = totalLeads > 0
-      ? Number((totalSpend / totalLeads).toFixed(2))
-      : (accountData ? extractCpl(totalSpend, totalLeads, accountData.cost_per_action_type) : 0);
+    const totalCpl = totalLeads > 0 ? Number((totalSpend / totalLeads).toFixed(2)) : 0;
     const totalCpm = totalImpressions > 0 ? Number(((totalSpend / totalImpressions) * 1000).toFixed(2)) : 0;
+    const totalFrequency = totalReach > 0 ? Number((totalImpressions / totalReach).toFixed(2)) : 1;
+
+    let accountBalance = 0;
+    if (adAccountRecord?.balance_type === "manual" && adAccountRecord?.manual_balance !== null) {
+      accountBalance = Number(adAccountRecord.manual_balance) || 0;
+    }
 
     const summary = {
       balance: accountBalance,
       spend: Number(totalSpend.toFixed(2)),
       impressions: totalImpressions,
       reach: totalReach,
-      frequency: Number(totalFrequency.toFixed(2)),
+      frequency: totalFrequency,
       clicks: totalClicks,
       leads: totalLeads,
-      purchases: totalPurchases,
-      roas: Number(totalRoas.toFixed(2)),
-      cpl: Number(totalCpl.toFixed(2)),
-      ctr: Number(totalCtr.toFixed(2)),
-      cpc: Number(totalCpc.toFixed(2)),
-      cpm: Number(totalCpm.toFixed(2)),
-      currency: metaAccountInfo?.currency || "BRL",
+      cpl: totalCpl,
+      ctr: totalCtr,
+      cpc: totalCpc,
+      cpm: totalCpm,
+      currency: "BRL",
     };
 
     return new Response(
@@ -522,11 +436,9 @@ Deno.serve(async (req: Request) => {
         ads,
         visibleMetrics,
         accountInfo: {
-          currency: metaAccountInfo?.currency || "BRL",
-          accountStatus: metaAccountInfo?.account_status,
-          spendCap: metaAccountInfo?.spend_cap ? metaAccountInfo.spend_cap / 100 : null,
-          balanceType: adAccountRecord?.balance_type || "auto",
-        }
+          currency: "BRL",
+          balanceType: adAccountRecord?.balance_type || "manual",
+        },
       }),
       {
         status: 200,
@@ -536,7 +448,7 @@ Deno.serve(async (req: Request) => {
   } catch (err: any) {
     console.error("Internal Server Error in meta-insights:", err);
     return new Response(
-      JSON.stringify({ error: "Erro interno no servidor ao processar insights da Meta Ads" }),
+      JSON.stringify({ error: "Erro interno no servidor ao processar insights via Windsor.ai", details: err?.message }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

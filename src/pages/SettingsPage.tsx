@@ -10,6 +10,13 @@ import {
   Sliders,
   Copy,
   CheckCheck,
+  Sparkles,
+  RefreshCw,
+  Users as TeamIcon,
+  UserCheck,
+  KeyRound,
+  UserPlus,
+  X,
 } from 'lucide-react';
 import type { Client, MetaAdAccount } from '../types/database';
 import {
@@ -25,8 +32,8 @@ import {
   adminDeleteUser,
   adminUpdateUser,
 } from '../services/clientService';
+import { fetchWindsorAccounts, type WindsorAccountOption } from '../services/metaInsightsService';
 import { MetricsConfigModal } from '../components/MetricsConfigModal';
-import { Users as TeamIcon, UserCheck, KeyRound, UserPlus, X } from 'lucide-react';
 
 interface SettingsPageProps {
   userRole?: 'admin' | 'coordenador' | 'gestor';
@@ -66,6 +73,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [editPasswordValue, setEditPasswordValue] = useState('');
   const [submittingPassword, setSubmittingPassword] = useState(false);
 
+  // Windsor Accounts
+  const [windsorAccounts, setWindsorAccounts] = useState<WindsorAccountOption[]>([]);
+  const [loadingWindsor, setLoadingWindsor] = useState(false);
+
   // Modal State
   const [modalClient, setModalClient] = useState<Client | null>(null);
   const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
@@ -94,11 +105,58 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       if (fetchedClients.length > 0 && !selectedClientIdForAccount) {
         setSelectedClientIdForAccount(fetchedClients[0].id);
       }
+
+      // Fetch Windsor BM accounts in background
+      try {
+        setLoadingWindsor(true);
+        const wAccounts = await fetchWindsorAccounts();
+        setWindsorAccounts(wAccounts);
+      } catch (wErr) {
+        console.warn('Could not load Windsor accounts:', wErr);
+      } finally {
+        setLoadingWindsor(false);
+      }
     } catch (err: any) {
       console.error(err);
       setMessage({ type: 'error', text: 'Erro ao carregar dados de configuração.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleQuickImportWindsor = async (account: WindsorAccountOption) => {
+    setMessage(null);
+    try {
+      let client = clients.find(
+        (c) => c.name.trim().toLowerCase() === account.accountName.trim().toLowerCase()
+      );
+      if (!client) {
+        client = await createClient(account.accountName);
+        setClients((prev) => [...prev, client!]);
+      }
+
+      const cleanAccId = account.accountId.replace(/^act_/, '').trim();
+      const existingAcc = adAccounts.find(
+        (a) => a.account_id.replace(/^act_/, '').trim() === cleanAccId
+      );
+
+      if (existingAcc) {
+        setMessage({
+          type: 'error',
+          text: `A conta "${account.accountName}" já está vinculada no dashboard!`,
+        });
+        return;
+      }
+
+      const createdAcc = await createAdAccount(client.id, account.accountName, account.accountId);
+      setAdAccounts((prev) => [...prev, createdAcc]);
+      setMessage({
+        type: 'success',
+        text: `Cliente "${account.accountName}" e Conta vinculados com sucesso com 1 clique!`,
+      });
+      onRefreshDashboard();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Erro ao importar conta do Windsor.' });
     }
   };
 
@@ -315,6 +373,176 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </div>
       )}
 
+      {/* Windsor BM Detected Accounts Section */}
+      <div
+        className="glass-panel"
+        style={{
+          padding: '20px 24px',
+          background: 'linear-gradient(135deg, rgba(0, 168, 232, 0.08) 0%, rgba(12, 26, 54, 0.7) 100%)',
+          border: '1px solid rgba(0, 229, 255, 0.25)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            marginBottom: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Sparkles size={20} color="#00E5FF" />
+            <div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFFFFF', margin: 0 }}>
+                Contas Detectadas na sua BM via Windsor.ai
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: '#94A3B8', margin: '2px 0 0 0' }}>
+                Todas as contas conectadas na sua Business Manager aparecem aqui para você vincular ao dashboard com 1 clique.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              setLoadingWindsor(true);
+              const w = await fetchWindsorAccounts();
+              setWindsorAccounts(w);
+              setLoadingWindsor(false);
+            }}
+            disabled={loadingWindsor}
+            className="btn-secondary"
+            style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+          >
+            <RefreshCw size={14} className={loadingWindsor ? 'animate-spin' : ''} />
+            {loadingWindsor ? 'Buscando...' : 'Atualizar Contas'}
+          </button>
+        </div>
+
+        {loadingWindsor ? (
+          <p style={{ fontSize: '0.85rem', color: '#94A3B8' }}>Buscando contas na API do Windsor.ai...</p>
+        ) : windsorAccounts.length === 0 ? (
+          <p style={{ fontSize: '0.85rem', color: '#64748B' }}>
+            Nenhuma conta retornada pelo conector Windsor.ai no momento.
+          </p>
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            {windsorAccounts.map((w) => {
+              const cleanId = w.accountId.replace(/^act_/, '');
+              const linkedAccount = adAccounts.find(
+                (a) => a.account_id.replace(/^act_/, '') === cleanId
+              );
+              const linkedClient = linkedAccount
+                ? clients.find((c) => c.id === linkedAccount.client_id)
+                : null;
+
+              return (
+                <div
+                  key={w.accountId}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    background: linkedClient ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                    border: linkedClient
+                      ? '1px solid rgba(16, 185, 129, 0.3)'
+                      : '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                      }}
+                    >
+                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#F8FAFC' }}>
+                        {w.accountName}
+                      </span>
+                      {linkedClient ? (
+                        <span
+                          style={{
+                            fontSize: '0.7rem',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            color: '#34D399',
+                            fontWeight: 600,
+                          }}
+                        >
+                          Vinculado
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '0.7rem',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(0, 168, 232, 0.2)',
+                            color: '#38BDF8',
+                            fontWeight: 600,
+                          }}
+                        >
+                          Disponível
+                        </span>
+                      )}
+                    </div>
+                    <code
+                      style={{
+                        fontSize: '0.75rem',
+                        color: '#94A3B8',
+                        fontFamily: 'monospace',
+                        display: 'block',
+                        marginTop: '4px',
+                      }}
+                    >
+                      ID: {w.accountId}
+                    </code>
+                    {linkedClient && (
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          color: '#6EE7B7',
+                          display: 'block',
+                          marginTop: '2px',
+                        }}
+                      >
+                        Cliente: <strong>{linkedClient.name}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  {!linkedClient && (
+                    <button
+                      type="button"
+                      onClick={() => handleQuickImportWindsor(w)}
+                      className="btn-primary"
+                      style={{ padding: '6px 10px', fontSize: '0.75rem', justifyContent: 'center' }}
+                    >
+                      <Plus size={13} />
+                      Cadastrar Cliente & Vincular
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Forms Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
         {/* Form 1: Add Client */}
@@ -381,6 +609,33 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </select>
             </div>
 
+            {windsorAccounts.length > 0 && (
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={14} color="#00E5FF" />
+                  Preencher com conta da BM (Windsor.ai):
+                </label>
+                <select
+                  className="form-select"
+                  onChange={(e) => {
+                    const selected = windsorAccounts.find((w) => w.accountId === e.target.value);
+                    if (selected) {
+                      setNewAccountName(selected.accountName);
+                      setNewAccountId(selected.accountId);
+                    }
+                  }}
+                  defaultValue=""
+                >
+                  <option value="">-- Selecione para preencher automático --</option>
+                  {windsorAccounts.map((w) => (
+                    <option key={w.accountId} value={w.accountId}>
+                      {w.accountName} ({w.accountId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="form-group">
               <label className="form-label">Nome da Conta (Apelido)</label>
               <input
@@ -397,7 +652,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               <input
                 type="text"
                 required
-                placeholder="Ex: act_1614544202842808"
+                placeholder="Ex: act_1614544202842808 ou 1324583549751176"
                 value={newAccountId}
                 onChange={(e) => setNewAccountId(e.target.value)}
                 className="form-input"
