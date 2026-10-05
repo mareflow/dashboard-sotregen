@@ -156,7 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? '1px solid rgba(0, 168, 232, 0.4)'
                   : '1px solid rgba(16, 185, 129, 0.4)',
               }}>
-                {userRole === 'admin' ? '👑 Admin' : userRole === 'coordenador' ? '🛡️ Coordenador' : '🚀 Gestor'}
+                {userRole === 'admin' ? '👑 Admin' : userRole === 'coordenador' ? '🛡️ Coordenador' : '🚀 Gestor de Tráfego'}
               </span>
 
               <div style={{

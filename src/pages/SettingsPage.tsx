@@ -395,11 +395,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </div>
       )}
 
-      {/* Windsor BM Detected Accounts Section */}
-      <div
-        className="glass-panel"
-        style={{
-          padding: '22px 26px',
+      {/* Windsor BM Detected Accounts Section (Coordenadores e Admin) */}
+      {userRole !== 'gestor' ? (
+        <div
+          className="glass-panel"
+          style={{
+            padding: '22px 26px',
           background: 'linear-gradient(135deg, rgba(0, 168, 232, 0.08) 0%, rgba(12, 26, 54, 0.75) 100%)',
           border: '1px solid rgba(0, 229, 255, 0.25)',
         }}
@@ -813,11 +814,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         )}
       </div>
+      ) : (
+        /* Painel Exclusivo do Gestor de Tráfego */
+        <div
+          className="glass-panel"
+          style={{
+            padding: '20px 24px',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(12, 26, 54, 0.75) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+          }}
+        >
+          <Sparkles size={24} color="#34D399" style={{ flexShrink: 0 }} />
+          <div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFFFFF', margin: 0 }}>
+              Painel do Gestor de Tráfego
+            </h3>
+            <p style={{ fontSize: '0.8125rem', color: '#94A3B8', margin: '4px 0 0 0' }}>
+              Abaixo estão os clientes atribuídos a você pela coordenação. Você pode copiar o link exclusivo de acompanhamento para enviar ao seu cliente ou personalizar as métricas liberadas para ele.
+            </p>
+          </div>
+        </div>
+      )}
 
-      {/* Forms Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
-        {/* Form 1: Add Client */}
-        <div className="glass-panel" style={{ padding: '24px' }}>
+      {/* Forms Grid (Exclusivo Coordenação e Admin) */}
+      {userRole !== 'gestor' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
+          {/* Form 1: Add Client */}
+          <div className="glass-panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
             <Building size={20} color="#00A8E8" />
             <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#FFFFFF' }}>
@@ -945,6 +971,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </form>
         </div>
       </div>
+      )}
 
       {/* Clients & Accounts Hierarchy List */}
       <div className="glass-panel" style={{ padding: '24px' }}>
@@ -1035,40 +1062,42 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                               👤 Gestor: {owner?.full_name || 'Não atribuído'}
                             </span>
 
-                            <select
-                              value={client.owner_id || ''}
-                              onChange={(e) => handleReassignOwner(client.id, e.target.value)}
-                              title="Alterar Gestor Responsável"
-                              style={{
-                                fontSize: '0.72rem',
-                                padding: '3px 6px',
-                                borderRadius: '4px',
-                                background: 'rgba(12, 26, 54, 0.9)',
-                                color: '#CBD5E1',
-                                border: '1px solid rgba(255, 255, 255, 0.15)',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <option value="">Alterar Gestor...</option>
-                              <optgroup label="🛡️ Squad Alpha">
-                                {profiles
-                                  .filter((p) => p.full_name?.includes('Alpha'))
-                                  .map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.full_name}
-                                    </option>
-                                  ))}
-                              </optgroup>
-                              <optgroup label="⚡ Squad Omega">
-                                {profiles
-                                  .filter((p) => p.full_name?.includes('Omega'))
-                                  .map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.full_name}
-                                    </option>
-                                  ))}
-                              </optgroup>
-                            </select>
+                            {userRole !== 'gestor' && (
+                              <select
+                                value={client.owner_id || ''}
+                                onChange={(e) => handleReassignOwner(client.id, e.target.value)}
+                                title="Alterar Gestor Responsável"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  padding: '3px 6px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(12, 26, 54, 0.9)',
+                                  color: '#CBD5E1',
+                                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <option value="">Alterar Gestor...</option>
+                                <optgroup label="🛡️ Squad Alpha">
+                                  {profiles
+                                    .filter((p) => p.full_name?.includes('Alpha'))
+                                    .map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.full_name}
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="⚡ Squad Omega">
+                                  {profiles
+                                    .filter((p) => p.full_name?.includes('Omega'))
+                                    .map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.full_name}
+                                      </option>
+                                    ))}
+                                </optgroup>
+                              </select>
+                            )}
                           </div>
                         );
                       })()}
@@ -1106,13 +1135,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         )}
                       </button>
 
-                      <button
-                        onClick={() => handleDeleteClient(client.id, client.name)}
-                        className="btn-danger"
-                      >
-                        <Trash2 size={14} />
-                        Excluir
-                      </button>
+                      {userRole !== 'gestor' && (
+                        <button
+                          onClick={() => handleDeleteClient(client.id, client.name)}
+                          className="btn-danger"
+                        >
+                          <Trash2 size={14} />
+                          Excluir
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -1153,19 +1184,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                             </code>
                           </div>
 
-                          <button
-                            onClick={() => handleDeleteAccount(acc.id, acc.account_name)}
-                            title="Remover conta"
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#F87171',
-                              cursor: 'pointer',
-                              padding: '4px',
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {userRole !== 'gestor' && (
+                            <button
+                              onClick={() => handleDeleteAccount(acc.id, acc.account_name)}
+                              title="Remover conta"
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#F87171',
+                                cursor: 'pointer',
+                                padding: '4px',
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
